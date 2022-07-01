@@ -3643,8 +3643,7 @@
 			  gen_lowpart (<ssebytemode>mode, operands[1]));
   operands[2] = gen_lowpart (<ssebytemode>mode, operands[2]);
 
-  if (!MEM_P (operands[3]))
-    operands[3] = force_reg (<ssebytemode>mode, operands[3]);
+  operands[3] = force_reg (<ssebytemode>mode, operands[3]);
   operands[3] = lowpart_subreg (<MODE>mode, operands[3], <ssebytemode>mode);
 })
 
@@ -8860,7 +8859,7 @@
   "@
    cvtsd2ss\t{%2, %0|%0, %2}
    cvtsd2ss\t{%2, %0|%0, %q2}
-   vcvtsd2ss\t{<round_mask_op3>%2, %1, %0<mask_operand3>|<mask_operand3>%0, %1, %q2<round_mask_op3>}"
+   vcvtsd2ss\t{<round_mask_op3>%2, %1, %0<mask_operand3>|%0<mask_operand3>, %1, %q2<round_mask_op3>}"
   [(set_attr "isa" "noavx,noavx,avx")
    (set_attr "type" "ssecvt")
    (set_attr "athlon_decode" "vector,double,*")
@@ -8904,7 +8903,7 @@
   "@
    cvtss2sd\t{%2, %0|%0, %2}
    cvtss2sd\t{%2, %0|%0, %k2}
-   vcvtss2sd\t{<round_saeonly_mask_op3>%2, %1, %0<mask_operand3>|<mask_operand3>%0, %1, %k2<round_saeonly_mask_op3>}"
+   vcvtss2sd\t{<round_saeonly_mask_op3>%2, %1, %0<mask_operand3>|%0<mask_operand3>, %1, %k2<round_saeonly_mask_op3>}"
   [(set_attr "isa" "noavx,noavx,avx")
    (set_attr "type" "ssecvt")
    (set_attr "amdfam10_decode" "vector,double,*")
@@ -14407,8 +14406,8 @@
   "TARGET_AVX512VL"
 {
   if (GET_MODE_SIZE (GET_MODE_INNER (<MODE>mode)) == 4)
-    return "vpmov<trunsuffix><pmov_suff_4>\t{%1, %0%{%2%}|%0%{%2%}, %t1}";
-  return "vpmov<trunsuffix><pmov_suff_4>\t{%1, %0%{%2%}|%0%{%2%}, %g1}";
+    return "vpmov<trunsuffix><pmov_suff_4>\t{%1, %0%{%2%}|%0%{%2%}, %1}";
+  return "vpmov<trunsuffix><pmov_suff_4>\t{%1, %0%{%2%}|%0%{%2%}, %1}";
 }
   [(set_attr "type" "ssemov")
    (set_attr "memory" "store")
@@ -14507,7 +14506,7 @@
 	  (match_dup 0)
 	  (match_operand:QI 2 "register_operand" "Yk")))]
   "TARGET_AVX512VL"
-  "vpmov<trunsuffix>qw\t{%1, %0%{%2%}|%0%{%2%}, %g1}"
+  "vpmov<trunsuffix>qw\t{%1, %0%{%2%}|%0%{%2%}, %1}"
   [(set_attr "type" "ssemov")
    (set_attr "memory" "store")
    (set_attr "prefix" "evex")
@@ -23251,8 +23250,10 @@
   "&& 1"
   [(const_int 0)]
 {
-  int ecx = !find_regno_note (curr_insn, REG_UNUSED, REGNO (operands[0]));
-  int xmm0 = !find_regno_note (curr_insn, REG_UNUSED, REGNO (operands[1]));
+  int ecx = !find_regno_note (curr_insn, REG_UNUSED,
+			      reg_or_subregno (operands[0]));
+  int xmm0 = !find_regno_note (curr_insn, REG_UNUSED,
+			       reg_or_subregno (operands[1]));
   int flags = !find_regno_note (curr_insn, REG_UNUSED, FLAGS_REG);
 
   if (ecx)
@@ -23387,8 +23388,10 @@
   "&& 1"
   [(const_int 0)]
 {
-  int ecx = !find_regno_note (curr_insn, REG_UNUSED, REGNO (operands[0]));
-  int xmm0 = !find_regno_note (curr_insn, REG_UNUSED, REGNO (operands[1]));
+  int ecx = !find_regno_note (curr_insn, REG_UNUSED,
+			      reg_or_subregno (operands[0]));
+  int xmm0 = !find_regno_note (curr_insn, REG_UNUSED,
+			       reg_or_subregno (operands[1]));
   int flags = !find_regno_note (curr_insn, REG_UNUSED, FLAGS_REG);
 
   if (ecx)
@@ -23876,21 +23879,23 @@
 	    (xor:V_128_256 (match_operand:V_128_256 1 "register_operand")
 			   (match_operand:V_128_256 2 "register_operand"))
 	    (match_operand:V_128_256 3 "nonimmediate_operand"))
-	  (match_operand:V_128_256 4 "register_operand")))]
-  "TARGET_XOP
-   && (REGNO (operands[4]) == REGNO (operands[1])
-       || REGNO (operands[4]) == REGNO (operands[2]))"
+	  (match_dup 1)))]
+  "TARGET_XOP"
   [(set (match_dup 0) (if_then_else:V_128_256 (match_dup 3)
-					      (match_dup 5)
-					      (match_dup 4)))]
-{
-  /* To handle the commutivity of XOR, operands[4] is either operands[1]
-     or operands[2], we need operands[5] to be the other one.  */
-  if (REGNO (operands[4]) == REGNO (operands[1]))
-    operands[5] = operands[2];
-  else
-    operands[5] = operands[1];
-})
+					      (match_dup 2)
+					      (match_dup 1)))])
+(define_split
+  [(set (match_operand:V_128_256 0 "register_operand")
+	(xor:V_128_256
+	  (and:V_128_256
+	    (xor:V_128_256 (match_operand:V_128_256 1 "register_operand")
+			   (match_operand:V_128_256 2 "register_operand"))
+	    (match_operand:V_128_256 3 "nonimmediate_operand"))
+	  (match_dup 2)))]
+  "TARGET_XOP"
+  [(set (match_dup 0) (if_then_else:V_128_256 (match_dup 3)
+					      (match_dup 1)
+					      (match_dup 2)))])
 
 ;; XOP horizontal add/subtract instructions
 (define_insn "xop_phadd<u>bw"

@@ -1,3 +1,64 @@
+2022-06-30  Harald Anlauf  <anlauf@gmx.de>
+	    Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/103137
+	PR fortran/103138
+	PR fortran/103693
+	PR fortran/105243
+	* decl.cc (gfc_match_data_decl): Reject CLASS entity declaration
+	when it is given the PARAMETER attribute.
+
+2022-06-29  Harald Anlauf  <anlauf@gmx.de>
+	    Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/106121
+	* simplify.cc (gfc_simplify_extends_type_of): Do not attempt to
+	simplify when one of the arguments is a CLASS variable that was
+	not properly declared.
+
+2022-06-28  Jakub Jelinek  <jakub@redhat.com>
+
+	* gfortran.h (gfc_real_info): Add use_iec_60559 bitfield.
+	* trans-types.h (gfc_real16_use_iec_60559): Declare.
+	* trans-types.cc (gfc_real16_use_iec_60559): Define.
+	(gfc_init_kinds): When building powerpc64le-linux libgfortran
+	on glibc 2.26 to 2.31, set gfc_real16_use_iec_60559 and
+	use_iec_60559.
+	(gfc_build_real_type): Set gfc_real16_use_iec_60559 and use_iec_60559
+	on glibc 2.26 or later.
+	* trans-intrinsic.cc (gfc_build_intrinsic_lib_fndecls): Adjust
+	comment.  Handle gfc_real16_use_iec_60559.
+	(gfc_get_intrinsic_lib_fndecl): Handle use_iec_60559.
+
+2022-06-26  Harald Anlauf  <anlauf@gmx.de>
+
+	PR fortran/105691
+	* simplify.cc (gfc_simplify_index): Replace old simplification
+	code by the equivalent of the runtime library implementation.  Use
+	HOST_WIDE_INT instead of int for string index, length variables.
+
+2022-06-26  Harald Anlauf  <anlauf@gmx.de>
+
+	PR fortran/105954
+	* decl.cc (variable_decl): Adjust upper bounds for explicit-shape
+	specs with constant bound expressions to ensure non-negative
+	extents.
+
+2022-06-24  Harald Anlauf  <anlauf@gmx.de>
+
+	PR fortran/105813
+	* check.cc (gfc_check_unpack): Try to simplify MASK argument to
+	UNPACK so that checking of the VECTOR argument can work when MASK
+	is a variable.
+
+2022-06-18  Harald Anlauf  <anlauf@gmx.de>
+
+	PR fortran/105986
+	* simplify.cc (gfc_simplify_btest): Add check for POS argument.
+	(gfc_simplify_ibclr): Add check for POS argument.
+	(gfc_simplify_ibits): Add check for POS and LEN arguments.
+	(gfc_simplify_ibset): Add check for POS argument.
+
 2022-06-08  Tobias Burnus  <tobias@codesourcery.com>
 
 	* openmp.cc (gfc_match_omp_clauses): Check also parent namespace

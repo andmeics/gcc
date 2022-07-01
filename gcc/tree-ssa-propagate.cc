@@ -679,8 +679,8 @@ public:
       BITMAP_FREE (need_eh_cleanup);
     }
 
-    virtual edge before_dom_children (basic_block);
-    virtual void after_dom_children (basic_block bb)
+    edge before_dom_children (basic_block) final override;
+    void after_dom_children (basic_block bb) final override
     {
       substitute_and_fold_engine->post_fold_bb (bb);
     }
@@ -813,7 +813,7 @@ substitute_and_fold_dom_walker::before_dom_children (basic_block bb)
       tree lhs = gimple_get_lhs (stmt);
       if (lhs && TREE_CODE (lhs) == SSA_NAME)
 	{
-	  tree sprime = substitute_and_fold_engine->value_of_expr (lhs, stmt);
+	  tree sprime = substitute_and_fold_engine->value_of_stmt (stmt, lhs);
 	  if (sprime
 	      && sprime != lhs
 	      && may_propagate_copy (lhs, sprime)
