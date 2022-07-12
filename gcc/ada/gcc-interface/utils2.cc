@@ -1936,7 +1936,7 @@ build_call_raise_range (int msg, Node_Id gnat_node, char kind,
    for record components.  */
 
 static int
-compare_elmt_bitpos (const PTR rt1, const PTR rt2)
+compare_elmt_bitpos (const void *rt1, const void *rt2)
 {
   const constructor_elt * const elmt1 = (const constructor_elt *) rt1;
   const constructor_elt * const elmt2 = (const constructor_elt *) rt2;
@@ -2139,11 +2139,13 @@ build_call_alloc_dealloc_proc (tree gnu_obj, tree gnu_size, tree gnu_type,
 			       Entity_Id gnat_proc, Entity_Id gnat_pool)
 {
   tree gnu_proc = gnat_to_gnu (gnat_proc);
+  tree gnu_align = size_int (TYPE_ALIGN (gnu_type) / BITS_PER_UNIT);
+
   tree gnu_call;
 
-  /* A storage pool's underlying type is a record type (for both predefined
-     storage pools and GNAT simple storage pools). The secondary stack uses
-     the same mechanism, but its pool object (SS_Pool) is an integer.  */
+  /* A storage pool's underlying type is a record type for both predefined
+     storage pools and GNAT simple storage pools.  The return and secondary
+     stacks use the same mechanism, but their pool object is an integer.  */
   if (Is_Record_Type (Underlying_Type (Etype (gnat_pool))))
     {
       /* The size is the third parameter; the alignment is the
@@ -2154,7 +2156,6 @@ build_call_alloc_dealloc_proc (tree gnu_obj, tree gnu_size, tree gnu_type,
 
       tree gnu_pool = gnat_to_gnu (gnat_pool);
       tree gnu_pool_addr = build_unary_op (ADDR_EXPR, NULL_TREE, gnu_pool);
-      tree gnu_align = size_int (TYPE_ALIGN (gnu_type) / BITS_PER_UNIT);
 
       gnu_size = convert (gnu_size_type, gnu_size);
       gnu_align = convert (gnu_size_type, gnu_align);
@@ -2170,7 +2171,6 @@ build_call_alloc_dealloc_proc (tree gnu_obj, tree gnu_size, tree gnu_type,
 				      gnu_size, gnu_align);
     }
 
-  /* Secondary stack case.  */
   else
     {
       /* The size is the second parameter.  */
@@ -2179,13 +2179,46 @@ build_call_alloc_dealloc_proc (tree gnu_obj, tree gnu_size, tree gnu_type,
       tree gnu_size_type = gnat_to_gnu_type (gnat_size_type);
 
       gnu_size = convert (gnu_size_type, gnu_size);
+      gnu_align = convert (gnu_size_type, gnu_align);
+
+      if (DECL_BUILT_IN_CLASS (gnu_proc) == BUILT_IN_FRONTEND
+	  && DECL_FE_FUNCTION_CODE (gnu_proc) == BUILT_IN_RETURN_SLOT)
+	{
+	  /* This must be an allocation of the return stack in a function that
+	     returns by invisible reference.  */
+	  gcc_assert (!gnu_obj);
+	  gcc_assert (current_function_decl
+		      && TREE_ADDRESSABLE (TREE_TYPE (current_function_decl)));
+	  tree gnu_ret_size;
+
+	  gnu_call = DECL_RESULT (current_function_decl);
+
+	  /* The allocation has already been done by the caller so we check that
+	     we are not going to overflow the return slot.  */
+	  if (TYPE_CI_CO_LIST (TREE_TYPE (current_function_decl)))
+	    gnu_ret_size
+	      = TYPE_SIZE_UNIT
+                (TREE_TYPE (TYPE_FIELDS (TREE_TYPE (TREE_TYPE (gnu_call)))));
+	  else
+	    gnu_ret_size = TYPE_SIZE_UNIT (TREE_TYPE (TREE_TYPE (gnu_call)));
+
+	  gnu_call
+	    = fold_build3 (COND_EXPR, TREE_TYPE (gnu_call),
+			   fold_build2 (LE_EXPR, boolean_type_node,
+				        fold_convert (sizetype, gnu_size),
+					gnu_ret_size),
+			   gnu_call,
+			   build_call_raise (PE_Explicit_Raise, Empty,
+					     N_Raise_Program_Error));
+	}
 
       /* The first arg is the address of the object, for a deallocator,
 	 then the size.  */
-      if (gnu_obj)
+      else if (gnu_obj)
 	gnu_call = build_call_n_expr (gnu_proc, 2, gnu_obj, gnu_size);
+
       else
-	gnu_call = build_call_n_expr (gnu_proc, 1, gnu_size);
+	gnu_call = build_call_n_expr (gnu_proc, 2, gnu_size, gnu_align);
     }
 
   return gnu_call;
@@ -2303,7 +2336,7 @@ maybe_wrap_free (tree data_ptr, tree data_type)
 
 /* Build a GCC tree to call an allocation or deallocation function.
    If GNU_OBJ is nonzero, it is an object to deallocate.  Otherwise,
-   generate an allocator.
+   generate an allocation.
 
    GNU_SIZE is the number of bytes to allocate and GNU_TYPE is the contained
    object type, used to determine the to-be-honored address alignment.

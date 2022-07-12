@@ -254,6 +254,7 @@ enum class TOK : unsigned char
     arrow,      // ->
     colonColon, // ::
     wchar_tLiteral,
+    endOfLine,  // \n, \r, \u2028, \u2029
     whitespace,
 
     // C only keywords
@@ -281,6 +282,7 @@ enum class TOK : unsigned char
     cdecl_,
     declspec,
     stdcall,
+    pragma,
     attribute__,
 
     MAX,

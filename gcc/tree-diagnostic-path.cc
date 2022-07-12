@@ -51,7 +51,7 @@ class path_label : public range_label
   : m_path (path), m_start_idx (start_idx)
   {}
 
-  label_text get_text (unsigned range_idx) const FINAL OVERRIDE
+  label_text get_text (unsigned range_idx) const final override
   {
     unsigned event_idx = m_start_idx + range_idx;
     const diagnostic_event &event = m_path->get_event (event_idx);
@@ -66,7 +66,6 @@ class path_label : public range_label
     pp_show_color (&pp) = pp_show_color (global_dc->printer);
     diagnostic_event_id_t event_id (event_idx);
     pp_printf (&pp, "%@ %s", &event_id, event_text.m_buffer);
-    event_text.maybe_free ();
     label_text result = label_text::take (xstrdup (pp_formatted_text (&pp)));
     return result;
   }
@@ -176,7 +175,6 @@ struct event_range
 	    pretty_printer *pp = dc->printer;
 	    pp_printf (pp, " %@: %s", &event_id, event_text.m_buffer);
 	    pp_newline (pp);
-	    event_text.maybe_free ();
 	  }
 	return;
       }
@@ -463,9 +461,27 @@ default_tree_diagnostic_path_printer (diagnostic_context *context,
 	    label_text event_text (event.get_desc (false));
 	    gcc_assert (event_text.m_buffer);
 	    diagnostic_event_id_t event_id (i);
-	    inform (event.get_location (),
-		    "%@ %s", &event_id, event_text.m_buffer);
-	    event_text.maybe_free ();
+	    if (context->show_path_depths)
+	      {
+		int stack_depth = event.get_stack_depth ();
+		tree fndecl = event.get_fndecl ();
+		/* -fdiagnostics-path-format=separate-events doesn't print
+		   fndecl information, so with -fdiagnostics-show-path-depths
+		   print the fndecls too, if any.  */
+		if (fndecl)
+		  inform (event.get_location (),
+			  "%@ %s (fndecl %qD, depth %i)",
+			  &event_id, event_text.m_buffer,
+			  fndecl, stack_depth);
+		else
+		  inform (event.get_location (),
+			  "%@ %s (depth %i)",
+			  &event_id, event_text.m_buffer,
+			  stack_depth);
+	      }
+	    else
+	      inform (event.get_location (),
+		      "%@ %s", &event_id, event_text.m_buffer);
 	  }
       }
       break;
@@ -504,7 +520,6 @@ default_tree_make_json_for_path (diagnostic_context *context,
 						     event.get_location ()));
       label_text event_text (event.get_desc (false));
       event_obj->set ("description", new json::string (event_text.m_buffer));
-      event_text.maybe_free ();
       if (tree fndecl = event.get_fndecl ())
 	{
 	  const char *function

@@ -80,10 +80,10 @@ private Dsymbol getDsymbolWithoutExpCtx(RootObject oarg)
 {
     if (auto e = isExpression(oarg))
     {
-        if (e.op == EXP.dotVariable)
-            return (cast(DotVarExp)e).var;
-        if (e.op == EXP.dotTemplateDeclaration)
-            return (cast(DotTemplateExp)e).td;
+        if (auto dve = e.isDotVarExp())
+            return dve.var;
+        if (auto dte = e.isDotTemplateExp())
+            return dte.td;
     }
     return getDsymbol(oarg);
 }
@@ -132,6 +132,7 @@ shared static this()
         "getVirtualFunctions",
         "getVirtualMethods",
         "classInstanceSize",
+        "classInstanceAlignment",
         "allMembers",
         "derivedMembers",
         "isSame",
@@ -833,7 +834,7 @@ Expression semanticTraits(TraitsExp e, Scope* sc)
                 e.error("argument `%s` has no visibility", o.toChars());
             return ErrorExp.get();
         }
-        if (s.semanticRun == PASS.init)
+        if (s.semanticRun == PASS.initial)
             s.dsymbolSemantic(null);
 
         auto protName = visibilityToString(s.visible().kind); // TODO: How about package(names)
@@ -1053,9 +1054,9 @@ Expression semanticTraits(TraitsExp e, Scope* sc)
         }
         else if (e.ident == Id.getMember)
         {
-            if (ex.op == EXP.dotIdentifier)
+            if (auto die = ex.isDotIdExp())
                 // Prevent semantic() from replacing Symbol with its initializer
-                (cast(DotIdExp)ex).wantsym = true;
+                die.wantsym = true;
             ex = ex.expressionSemantic(scx);
             return ex;
         }
@@ -1211,7 +1212,7 @@ Expression semanticTraits(TraitsExp e, Scope* sc)
         else
             assert(0);
     }
-    if (e.ident == Id.classInstanceSize)
+    if (e.ident == Id.classInstanceSize || e.ident == Id.classInstanceAlignment)
     {
         if (dim != 1)
             return dimError(1);
@@ -1234,7 +1235,7 @@ Expression semanticTraits(TraitsExp e, Scope* sc)
             return ErrorExp.get();
         }
 
-        return new IntegerExp(e.loc, cd.structsize, Type.tsize_t);
+        return new IntegerExp(e.loc, e.ident == Id.classInstanceSize ? cd.structsize : cd.alignsize, Type.tsize_t);
     }
     if (e.ident == Id.getAliasThis)
     {
@@ -1278,7 +1279,7 @@ Expression semanticTraits(TraitsExp e, Scope* sc)
             {
                 s = s.isImport().mod;
             }
-            //printf("getAttributes %s, attrs = %p, scope = %p\n", s.toChars(), s.userAttribDecl, s.scope);
+            //printf("getAttributes %s, attrs = %p, scope = %p\n", s.toChars(), s.userAttribDecl, s._scope);
             udad = s.userAttribDecl;
         }
         else
@@ -1381,7 +1382,7 @@ Expression semanticTraits(TraitsExp e, Scope* sc)
                 e.error("argument to `__traits(getFunctionVariadicStyle, %s)` is not a function", o.toChars());
                 return ErrorExp.get();
             }
-            link = fd.linkage;
+            link = fd._linkage;
             varargs = fd.getParameterList().varargs;
         }
         string style;
@@ -1514,7 +1515,9 @@ Expression semanticTraits(TraitsExp e, Scope* sc)
         TypeFunction tf = toTypeFunction(o, fd);
 
         if (tf)
-            link = tf.linkage;
+        {
+            link = fd ? fd.toAliasFunc()._linkage : tf.linkage;
+        }
         else
         {
             auto s = getDsymbol(o);
@@ -1527,7 +1530,7 @@ Expression semanticTraits(TraitsExp e, Scope* sc)
             }
 
             if (d !is null)
-                link = d.linkage;
+                link = d._linkage;
             else
             {
                 // Resolves forward references
@@ -1572,7 +1575,7 @@ Expression semanticTraits(TraitsExp e, Scope* sc)
         auto s = getDsymbol(o);
         if (!s)
         {
-            e.error("In expression `%s` `%s` can't have members", e.toChars(), o.toChars());
+            e.error("in expression `%s` `%s` can't have members", e.toChars(), o.toChars());
             e.errorSupplemental("`%s` must evaluate to either a module, a struct, an union, a class, an interface or a template instantiation", o.toChars());
 
             return ErrorExp.get();
@@ -1593,7 +1596,7 @@ Expression semanticTraits(TraitsExp e, Scope* sc)
         auto sds = s.isScopeDsymbol();
         if (!sds || sds.isTemplateDeclaration())
         {
-            e.error("In expression `%s` %s `%s` has no members", e.toChars(), s.kind(), s.toChars());
+            e.error("in expression `%s` %s `%s` has no members", e.toChars(), s.kind(), s.toChars());
             e.errorSupplemental("`%s` must evaluate to either a module, a struct, an union, a class, an interface or a template instantiation", s.toChars());
             return ErrorExp.get();
         }
@@ -1730,69 +1733,33 @@ Expression semanticTraits(TraitsExp e, Scope* sc)
             bool err = false;
 
             auto t = isType(o);
-            while (t)
+            auto ex = isExpression(o);
+            if (t)
             {
-                if (auto tm = t.isTypeMixin())
+                Dsymbol s;
+                t.resolve(e.loc, sc2, ex, t, s);
+                if (t)
                 {
-                    /* The mixin string could be a type or an expression.
-                     * Have to try compiling it to see.
-                     */
-                    OutBuffer buf;
-                    if (expressionsToString(buf, sc, tm.exps))
-                    {
+                    t.typeSemantic(e.loc, sc2);
+                    if (t.ty == Terror)
                         err = true;
-                        break;
-                    }
-                    const olderrors = global.errors;
-                    const len = buf.length;
-                    buf.writeByte(0);
-                    const str = buf.extractSlice()[0 .. len];
-                    scope p = new Parser!ASTCodegen(e.loc, sc._module, str, false);
-                    p.nextToken();
-                    //printf("p.loc.linnum = %d\n", p.loc.linnum);
-
-                    o = p.parseTypeOrAssignExp(TOK.endOfFile);
-                    if (olderrors != global.errors || p.token.value != TOK.endOfFile)
-                    {
-                        err = true;
-                        break;
-                    }
-                    t = o.isType();
                 }
-                else
-                    break;
+                else if (s && s.errors)
+                    err = true;
             }
-
-            if (!err)
+            if (ex)
             {
-                auto ex = t ? t.typeToExpression() : isExpression(o);
-                if (!ex && t)
+                ex = ex.expressionSemantic(sc2);
+                ex = resolvePropertiesOnly(sc2, ex);
+                ex = ex.optimize(WANTvalue);
+                if (sc2.func && sc2.func.type.ty == Tfunction)
                 {
-                    Dsymbol s;
-                    t.resolve(e.loc, sc2, ex, t, s);
-                    if (t)
-                    {
-                        t.typeSemantic(e.loc, sc2);
-                        if (t.ty == Terror)
-                            err = true;
-                    }
-                    else if (s && s.errors)
-                        err = true;
+                    const tf = cast(TypeFunction)sc2.func.type;
+                    err |= tf.isnothrow && canThrow(ex, sc2.func, false);
                 }
-                if (ex)
-                {
-                    ex = ex.expressionSemantic(sc2);
-                    ex = resolvePropertiesOnly(sc2, ex);
-                    ex = ex.optimize(WANTvalue);
-                    if (sc2.func && sc2.func.type.ty == Tfunction)
-                    {
-                        const tf = cast(TypeFunction)sc2.func.type;
-                        err |= tf.isnothrow && canThrow(ex, sc2.func, false);
-                    }
-                    ex = checkGC(sc2, ex);
-                    if (ex.op == EXP.error)
-                        err = true;
-                }
+                ex = checkGC(sc2, ex);
+                if (ex.op == EXP.error)
+                    err = true;
             }
 
             // Carefully detach the scope from the parent and throw it away as
@@ -2101,13 +2068,14 @@ Expression semanticTraits(TraitsExp e, Scope* sc)
             return ErrorExp.get();
         }
 
-        if (sc.func is null)
+        auto fd = sc.getEnclosingFunction();
+        if (!fd)
         {
             e.error("`__traits(parameters)` may only be used inside a function");
             return ErrorExp.get();
         }
-        assert(sc.func && sc.parent.isFuncDeclaration());
-        auto tf = sc.parent.isFuncDeclaration.type.isTypeFunction();
+
+        auto tf = fd.type.isTypeFunction();
         assert(tf);
         auto exps = new Expressions(0);
         int addParameterDG(size_t idx, Parameter x)
@@ -2162,7 +2130,7 @@ private bool isSame(RootObject o1, RootObject o2, Scope* sc)
         {
             if (ea.op == EXP.function_)
             {
-                if (auto fe = cast(FuncExp)ea)
+                if (auto fe = ea.isFuncExp())
                     return fe.fd;
             }
         }

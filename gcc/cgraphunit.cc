@@ -179,9 +179,9 @@ along with GCC; see the file COPYING3.  If not see
 #include "stor-layout.h"
 #include "output.h"
 #include "cfgcleanup.h"
+#include "gimple-iterator.h"
 #include "gimple-fold.h"
 #include "gimplify.h"
-#include "gimple-iterator.h"
 #include "gimplify-me.h"
 #include "tree-cfg.h"
 #include "tree-into-ssa.h"
@@ -621,6 +621,7 @@ cgraph_node::analyze (void)
   tree decl = this->decl;
   location_t saved_loc = input_location;
   input_location = DECL_SOURCE_LOCATION (decl);
+  semantic_interposition = opt_for_fn (decl, flag_semantic_interposition);
 
   if (thunk)
     {
@@ -1032,8 +1033,7 @@ walk_polymorphic_call_targets (hash_set<void *> *reachable_call_targets,
 	  if (targets.length () == 1)
 	    target = targets[0];
 	  else
-	    target = cgraph_node::create
-			(builtin_decl_implicit (BUILT_IN_UNREACHABLE));
+	    target = cgraph_node::create (builtin_decl_unreachable ());
 
 	  if (symtab->dump_file)
 	    {

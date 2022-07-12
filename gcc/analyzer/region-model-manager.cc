@@ -68,6 +68,7 @@ namespace ana {
 
 region_model_manager::region_model_manager (logger *logger)
 : m_logger (logger),
+  m_empty_call_string (),
   m_next_region_id (0),
   m_root_region (alloc_region_id ()),
   m_stack_region (alloc_region_id (), &m_root_region),
@@ -97,11 +98,11 @@ region_model_manager::~region_model_manager ()
        iter != m_unknowns_map.end (); ++iter)
     delete (*iter).second;
   delete m_unknown_NULL;
-  for (setjmp_values_map_t::iterator iter = m_setjmp_values_map.begin ();
-       iter != m_setjmp_values_map.end (); ++iter)
-    delete (*iter).second;
   for (poisoned_values_map_t::iterator iter = m_poisoned_values_map.begin ();
        iter != m_poisoned_values_map.end (); ++iter)
+    delete (*iter).second;
+  for (setjmp_values_map_t::iterator iter = m_setjmp_values_map.begin ();
+       iter != m_setjmp_values_map.end (); ++iter)
     delete (*iter).second;
   for (initial_values_map_t::iterator iter = m_initial_values_map.begin ();
        iter != m_initial_values_map.end (); ++iter)
@@ -118,6 +119,10 @@ region_model_manager::~region_model_manager ()
   for (sub_values_map_t::iterator iter = m_sub_values_map.begin ();
        iter != m_sub_values_map.end (); ++iter)
     delete (*iter).second;
+  for (auto iter : m_repeated_values_map)
+    delete iter.second;
+  for (auto iter : m_bits_within_values_map)
+    delete iter.second;
   for (unmergeable_values_map_t::iterator iter
 	 = m_unmergeable_values_map.begin ();
        iter != m_unmergeable_values_map.end (); ++iter)
@@ -131,6 +136,10 @@ region_model_manager::~region_model_manager ()
   for (conjured_values_map_t::iterator iter = m_conjured_values_map.begin ();
        iter != m_conjured_values_map.end (); ++iter)
     delete (*iter).second;
+  for (auto iter : m_asm_output_values_map)
+    delete iter.second;
+  for (auto iter : m_const_fn_result_values_map)
+    delete iter.second;
 
   /* Delete consolidated regions.  */
   for (fndecls_map_t::iterator iter = m_fndecls_map.begin ();
@@ -1362,6 +1371,19 @@ region_model_manager::get_region_for_global (tree expr)
   return reg;
 }
 
+/* Return the region for an unknown access of type REGION_TYPE,
+   creating it if necessary.
+   This is a symbolic_region, where the pointer is an unknown_svalue
+   of type &REGION_TYPE.  */
+
+const region *
+region_model_manager::get_unknown_symbolic_region (tree region_type)
+{
+  tree ptr_type = region_type ? build_pointer_type (region_type) : NULL_TREE;
+  const svalue *unknown_ptr = get_or_create_unknown_svalue (ptr_type);
+  return get_symbolic_region (unknown_ptr);
+}
+
 /* Return the region that describes accessing field FIELD of PARENT,
    creating it if necessary.  */
 
@@ -1372,12 +1394,7 @@ region_model_manager::get_field_region (const region *parent, tree field)
 
   /* (*UNKNOWN_PTR).field is (*UNKNOWN_PTR_OF_&FIELD_TYPE).  */
   if (parent->symbolic_for_unknown_ptr_p ())
-    {
-      tree ptr_to_field_type = build_pointer_type (TREE_TYPE (field));
-      const svalue *unknown_ptr_to_field
-	= get_or_create_unknown_svalue (ptr_to_field_type);
-      return get_symbolic_region (unknown_ptr_to_field);
-    }
+    return get_unknown_symbolic_region (TREE_TYPE (field));
 
   field_region::key_t key (parent, field);
   if (field_region *reg = m_field_regions.get (key))
@@ -1397,6 +1414,10 @@ region_model_manager::get_element_region (const region *parent,
 					  tree element_type,
 					  const svalue *index)
 {
+  /* (UNKNOWN_PTR[IDX]) is (UNKNOWN_PTR).  */
+  if (parent->symbolic_for_unknown_ptr_p ())
+    return get_unknown_symbolic_region (element_type);
+
   element_region::key_t key (parent, element_type, index);
   if (element_region *reg = m_element_regions.get (key))
     return reg;
@@ -1416,6 +1437,10 @@ region_model_manager::get_offset_region (const region *parent,
 					 tree type,
 					 const svalue *byte_offset)
 {
+  /* (UNKNOWN_PTR + OFFSET) is (UNKNOWN_PTR).  */
+  if (parent->symbolic_for_unknown_ptr_p ())
+    return get_unknown_symbolic_region (type);
+
   /* If BYTE_OFFSET is zero, return PARENT.  */
   if (tree cst_offset = byte_offset->maybe_get_constant ())
     if (zerop (cst_offset))
@@ -1451,6 +1476,9 @@ region_model_manager::get_sized_region (const region *parent,
 					tree type,
 					const svalue *byte_size_sval)
 {
+  if (parent->symbolic_for_unknown_ptr_p ())
+    return get_unknown_symbolic_region (type);
+
   if (byte_size_sval->get_type () != size_type_node)
     byte_size_sval = get_or_create_cast (size_type_node, byte_size_sval);
 
@@ -1485,6 +1513,9 @@ region_model_manager::get_cast_region (const region *original_region,
   /* If types match, return ORIGINAL_REGION.  */
   if (type == original_region->get_type ())
     return original_region;
+
+  if (original_region->symbolic_for_unknown_ptr_p ())
+    return get_unknown_symbolic_region (type);
 
   cast_region::key_t key (original_region, type);
   if (cast_region *reg = m_cast_regions.get (key))
@@ -1558,6 +1589,9 @@ region_model_manager::get_bit_range (const region *parent, tree type,
 {
   gcc_assert (parent);
 
+  if (parent->symbolic_for_unknown_ptr_p ())
+    return get_unknown_symbolic_region (type);
+
   bit_range_region::key_t key (parent, type, bits);
   if (bit_range_region *reg = m_bit_range_regions.get (key))
     return reg;
@@ -1566,6 +1600,25 @@ region_model_manager::get_bit_range (const region *parent, tree type,
     = new bit_range_region (alloc_region_id (), parent, type, bits);
   m_bit_range_regions.put (key, bit_range_reg);
   return bit_range_reg;
+}
+
+/* Return the region that describes accessing the IDX-th variadic argument
+   within PARENT_FRAME, creating it if necessary.  */
+
+const var_arg_region *
+region_model_manager::get_var_arg_region (const frame_region *parent_frame,
+					  unsigned idx)
+{
+  gcc_assert (parent_frame);
+
+  var_arg_region::key_t key (parent_frame, idx);
+  if (var_arg_region *reg = m_var_arg_regions.get (key))
+    return reg;
+
+  var_arg_region *var_arg_reg
+    = new var_arg_region (alloc_region_id (), parent_frame, idx);
+  m_var_arg_regions.put (key, var_arg_reg);
+  return var_arg_reg;
 }
 
 /* If we see a tree code we don't know how to handle, rather than
@@ -1696,6 +1749,8 @@ void
 region_model_manager::log_stats (logger *logger, bool show_objs) const
 {
   LOG_SCOPE (logger);
+  logger->log ("call string consolidation");
+  m_empty_call_string.recursive_log (logger);
   logger->log ("svalue consolidation");
   log_uniq_map (logger, show_objs, "constant_svalue", m_constants_map);
   log_uniq_map (logger, show_objs, "unknown_svalue", m_unknowns_map);
@@ -1740,6 +1795,7 @@ region_model_manager::log_stats (logger *logger, bool show_objs) const
   log_uniq_map (logger, show_objs, "symbolic_region", m_symbolic_regions);
   log_uniq_map (logger, show_objs, "string_region", m_string_map);
   log_uniq_map (logger, show_objs, "bit_range_region", m_bit_range_regions);
+  log_uniq_map (logger, show_objs, "var_arg_region", m_var_arg_regions);
   logger->log ("  # managed dynamic regions: %i",
 	       m_managed_dynamic_regions.length ());
   m_store_mgr.log_stats (logger, show_objs);

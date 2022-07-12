@@ -245,6 +245,7 @@ enum TOK : ubyte
     arrow,      // ->
     colonColon, // ::
     wchar_tLiteral,
+    endOfLine,  // \n, \r, \u2028, \u2029
     whitespace,
 
     // C only keywords
@@ -272,6 +273,7 @@ enum TOK : ubyte
     __cdecl,
     __declspec,
     __stdcall,
+    __pragma,
     __attribute__,
 }
 
@@ -581,6 +583,7 @@ private immutable TOK[] keywords =
     TOK.__cdecl,
     TOK.__declspec,
     TOK.__stdcall,
+    TOK.__pragma,
     TOK.__attribute__,
 ];
 
@@ -590,7 +593,7 @@ shared static this() nothrow
     Identifier.initTable();
     foreach (kw; keywords)
     {
-        //printf("keyword[%d] = '%s'\n",kw, tochars[kw].ptr);
+        //printf("keyword[%d] = '%s'\n",kw, Token.tochars[kw].ptr);
         Identifier.idPool(Token.tochars[kw].ptr, Token.tochars[kw].length, cast(uint)kw);
     }
 }
@@ -607,9 +610,9 @@ static immutable TOK[TOK.max + 1] Ckeywords =
         enum Ckwds = [ auto_, break_, case_, char_, const_, continue_, default_, do_, float64, else_,
                        enum_, extern_, float32, for_, goto_, if_, inline, int32, int64, register,
                        restrict, return_, int16, signed, sizeof_, static_, struct_, switch_, typedef_,
-                       union_, unsigned, void_, volatile, while_, asm_,
+                       union_, unsigned, void_, volatile, while_, asm_, typeof_,
                        _Alignas, _Alignof, _Atomic, _Bool, _Complex, _Generic, _Imaginary, _Noreturn,
-                       _Static_assert, _Thread_local, _import, __cdecl, __declspec, __stdcall, __attribute__ ];
+                       _Static_assert, _Thread_local, _import, __cdecl, __declspec, __stdcall, __pragma, __attribute__ ];
 
         foreach (kw; Ckwds)
             tab[kw] = cast(TOK) kw;
@@ -851,6 +854,7 @@ extern (C++) struct Token
         TOK.wcharLiteral: "wcharv",
         TOK.dcharLiteral: "dcharv",
         TOK.wchar_tLiteral: "wchar_tv",
+        TOK.endOfLine: "\\n",
         TOK.whitespace: "whitespace",
 
         // C only keywords
@@ -878,6 +882,7 @@ extern (C++) struct Token
         TOK.__cdecl        : "__cdecl",
         TOK.__declspec     : "__declspec",
         TOK.__stdcall      : "__stdcall",
+        TOK.__pragma       : "__pragma",
         TOK.__attribute__  : "__attribute__",
     ];
 
@@ -945,20 +950,19 @@ nothrow:
             sprintf(&buffer[0], "%d", cast(int)intvalue);
             break;
         case TOK.uns32Literal:
-        case TOK.wcharLiteral:
-        case TOK.dcharLiteral:
         case TOK.wchar_tLiteral:
             sprintf(&buffer[0], "%uU", cast(uint)unsvalue);
             break;
+        case TOK.wcharLiteral:
+        case TOK.dcharLiteral:
         case TOK.charLiteral:
-        {
-            const v = cast(int)intvalue;
-            if (v >= ' ' && v <= '~')
-                sprintf(&buffer[0], "'%c'", v);
-            else
-                sprintf(&buffer[0], "'\\x%02x'", v);
+            {
+                OutBuffer buf;
+                buf.writeSingleCharLiteral(cast(dchar) intvalue);
+                buf.writeByte('\0');
+                p = buf.extractSlice().ptr;
+            }
             break;
-        }
         case TOK.int64Literal:
             sprintf(&buffer[0], "%lldL", cast(long)intvalue);
             break;
@@ -1090,7 +1094,7 @@ void writeCharLiteral(ref OutBuffer buf, dchar c)
             buf.writeByte('\\');
             goto default;
         default:
-            if (c <= 0x7F)
+            if (c <= 0xFF)
             {
                 if (isprint(c))
                     buf.writeByte(c);
@@ -1113,4 +1117,41 @@ unittest
         writeCharLiteral(buf, d);
     }
     assert(buf.extractSlice() == `a\n\r\t\b\f\0\x11\u7233\U00017233`);
+}
+
+/**
+ * Write a single-quoted character literal
+ *
+ * Useful for printing '' char literals in e.g. error messages, ddoc, or the `.stringof` property
+ *
+ * Params:
+ *   buf = buffer to append character in
+ *   c = code point to write
+ */
+nothrow
+void writeSingleCharLiteral(ref OutBuffer buf, dchar c)
+{
+    buf.writeByte('\'');
+    if (c == '\'')
+        buf.writeByte('\\');
+
+    if (c == '"')
+        buf.writeByte('"');
+    else
+        writeCharLiteral(buf, c);
+
+    buf.writeByte('\'');
+}
+
+unittest
+{
+    OutBuffer buf;
+    writeSingleCharLiteral(buf, '\'');
+    assert(buf.extractSlice() == `'\''`);
+    buf.reset();
+    writeSingleCharLiteral(buf, '"');
+    assert(buf.extractSlice() == `'"'`);
+    buf.reset();
+    writeSingleCharLiteral(buf, '\n');
+    assert(buf.extractSlice() == `'\n'`);
 }

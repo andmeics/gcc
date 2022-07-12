@@ -343,10 +343,6 @@ build_value_init (tree type, tsubst_flags_t complain)
      A program that calls for default-initialization or
      value-initialization of an entity of reference type is ill-formed.  */
 
-  /* The AGGR_INIT_EXPR tweaking below breaks in templates.  */
-  gcc_assert (!processing_template_decl
-	      || (SCALAR_TYPE_P (type) || TREE_CODE (type) == ARRAY_TYPE));
-
   if (CLASS_TYPE_P (type) && type_build_ctor_call (type))
     {
       tree ctor
@@ -354,6 +350,9 @@ build_value_init (tree type, tsubst_flags_t complain)
 				     NULL, type, LOOKUP_NORMAL, complain);
       if (ctor == error_mark_node || TREE_CONSTANT (ctor))
 	return ctor;
+      if (processing_template_decl)
+	/* The AGGR_INIT_EXPR tweaking below breaks in templates.  */
+	return build_min (CAST_EXPR, type, NULL_TREE);
       tree fn = NULL_TREE;
       if (TREE_CODE (ctor) == CALL_EXPR)
 	fn = get_callee_fndecl (ctor);
@@ -422,7 +421,7 @@ build_value_init_noctor (tree type, tsubst_flags_t complain)
 		  && !COMPLETE_TYPE_P (ftype)
 		  && !TYPE_DOMAIN (ftype)
 		  && COMPLETE_TYPE_P (TREE_TYPE (ftype))
-		  && (next_initializable_field (DECL_CHAIN (field))
+		  && (next_aggregate_field (DECL_CHAIN (field))
 		      == NULL_TREE))
 		continue;
 
@@ -1066,7 +1065,7 @@ perform_member_init (tree member, tree init, hash_set<tree> &uninitialized)
       init = build2 (INIT_EXPR, type, decl, init);
       finish_expr_stmt (init);
       FOR_EACH_VEC_ELT (*cleanups, i, t)
-	push_cleanup (decl, t, false);
+	push_cleanup (NULL_TREE, t, false);
     }
   else if (type_build_ctor_call (type)
 	   || (init && CLASS_TYPE_P (strip_array_types (type))))
@@ -1477,9 +1476,9 @@ emit_mem_initializers (tree mem_inits)
 
   /* Initially that is all of them.  */
   if (warn_uninitialized)
-    for (tree f = next_initializable_field (TYPE_FIELDS (current_class_type));
+    for (tree f = next_aggregate_field (TYPE_FIELDS (current_class_type));
 	 f != NULL_TREE;
-	 f = next_initializable_field (DECL_CHAIN (f)))
+	 f = next_aggregate_field (DECL_CHAIN (f)))
       if (!DECL_ARTIFICIAL (f)
 	  && !is_really_empty_class (TREE_TYPE (f), /*ignore_vptr*/false))
 	uninitialized.add (f);
@@ -2811,6 +2810,11 @@ warn_placement_new_too_small (tree type, tree nelts, tree size, tree oper)
   if (!objsize)
     return;
 
+  /* We can only draw conclusions if ref.deref == -1,
+     i.e. oper is the address of the object.  */
+  if (ref.deref != -1)
+    return;
+
   offset_int bytes_avail = wi::to_offset (objsize);
   offset_int bytes_need;
 
@@ -3287,7 +3291,7 @@ build_new_1 (vec<tree, va_gc> **placement, tree type, tree nelts,
     {
       unsigned align = TYPE_ALIGN_UNIT (elt_type);
       /* Also consider the alignment of the cookie, if any.  */
-      if (TYPE_VEC_NEW_USES_COOKIE (elt_type))
+      if (array_p && TYPE_VEC_NEW_USES_COOKIE (elt_type))
 	align = MAX (align, TYPE_ALIGN_UNIT (size_type_node));
       align_arg = build_int_cst (align_type_node, align);
     }
@@ -4908,10 +4912,9 @@ build_vec_init (tree base, tree maxindex, tree init,
   /* Now make the result have the correct type.  */
   if (TREE_CODE (atype) == ARRAY_TYPE)
     {
-      atype = build_pointer_type (atype);
+      atype = build_reference_type (atype);
       stmt_expr = build1 (NOP_EXPR, atype, stmt_expr);
-      stmt_expr = cp_build_fold_indirect_ref (stmt_expr);
-      suppress_warning (stmt_expr /* What warning? */);
+      stmt_expr = convert_from_reference (stmt_expr);
     }
 
   return stmt_expr;

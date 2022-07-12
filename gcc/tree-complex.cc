@@ -41,6 +41,7 @@ along with GCC; see the file COPYING3.  If not see
 #include "cfgloop.h"
 #include "cfganal.h"
 #include "gimple-fold.h"
+#include "diagnostic-core.h"
 
 
 /* For each complex ssa name, a lattice value.  We're interested in finding
@@ -63,8 +64,8 @@ typedef int complex_lattice_t;
 
 class complex_propagate : public ssa_propagation_engine
 {
-  enum ssa_prop_result visit_stmt (gimple *, edge *, tree *) FINAL OVERRIDE;
-  enum ssa_prop_result visit_phi (gphi *) FINAL OVERRIDE;
+  enum ssa_prop_result visit_stmt (gimple *, edge *, tree *) final override;
+  enum ssa_prop_result visit_phi (gphi *) final override;
 };
 
 static vec<complex_lattice_t> complex_lattice_values;
@@ -1614,6 +1615,7 @@ expand_complex_asm (gimple_stmt_iterator *gsi)
 {
   gasm *stmt = as_a <gasm *> (gsi_stmt (*gsi));
   unsigned int i;
+  bool diagnosed_p = false;
 
   for (i = 0; i < gimple_asm_noutputs (stmt); ++i)
     {
@@ -1622,6 +1624,20 @@ expand_complex_asm (gimple_stmt_iterator *gsi)
       if (TREE_CODE (op) == SSA_NAME
 	  && TREE_CODE (TREE_TYPE (op)) == COMPLEX_TYPE)
 	{
+	  if (gimple_asm_nlabels (stmt) > 0)
+	    {
+	      if (!diagnosed_p)
+		{
+		  sorry_at (gimple_location (stmt),
+			    "%<asm goto%> with complex typed outputs");
+		  diagnosed_p = true;
+		}
+	      /* Make sure to not ICE later, see PR105165.  */
+	      tree zero = build_zero_cst (TREE_TYPE (TREE_TYPE (op)));
+	      set_component_ssa_name (op, false, zero);
+	      set_component_ssa_name (op, true, zero);
+	      continue;
+	    }
 	  tree type = TREE_TYPE (op);
 	  tree inner_type = TREE_TYPE (type);
 	  tree r = build1 (REALPART_EXPR, inner_type, op);
@@ -1899,8 +1915,11 @@ public:
   {}
 
   /* opt_pass methods: */
-  opt_pass * clone () { return new pass_lower_complex (m_ctxt); }
-  virtual unsigned int execute (function *) { return tree_lower_complex (); }
+  opt_pass * clone () final override { return new pass_lower_complex (m_ctxt); }
+  unsigned int execute (function *) final override
+  {
+    return tree_lower_complex ();
+  }
 
 }; // class pass_lower_complex
 
@@ -1936,14 +1955,17 @@ public:
   {}
 
   /* opt_pass methods: */
-  virtual bool gate (function *fun)
+  bool gate (function *fun) final override
     {
       /* With errors, normal optimization passes are not run.  If we don't
 	 lower complex operations at all, rtl expansion will abort.  */
       return !(fun->curr_properties & PROP_gimple_lcx);
     }
 
-  virtual unsigned int execute (function *) { return tree_lower_complex (); }
+  unsigned int execute (function *) final override
+  {
+    return tree_lower_complex ();
+  }
 
 }; // class pass_lower_complex_O0
 

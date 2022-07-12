@@ -100,8 +100,8 @@ along with GCC; see the file COPYING3.  If not see
 #include "gimple-pretty-print.h"
 #include "alias.h"
 #include "fold-const.h"
-#include "gimple-fold.h"
 #include "gimple-iterator.h"
+#include "gimple-fold.h"
 #include "gimplify.h"
 #include "gimplify-me.h"
 #include "stor-layout.h"
@@ -920,8 +920,11 @@ public:
   {}
 
   /* opt_pass methods: */
-  virtual bool gate (function *) { return optimize && flag_reciprocal_math; }
-  virtual unsigned int execute (function *);
+  bool gate (function *) final override
+  {
+    return optimize && flag_reciprocal_math;
+  }
+  unsigned int execute (function *) final override;
 
 }; // class pass_cse_reciprocals
 
@@ -1113,7 +1116,7 @@ make_pass_cse_reciprocals (gcc::context *ctxt)
    conversions.  Return the prevailing name.  */
 
 static tree
-execute_cse_conv_1 (tree name)
+execute_cse_conv_1 (tree name, bool *cfg_changed)
 {
   if (SSA_NAME_IS_DEFAULT_DEF (name)
       || SSA_NAME_OCCURS_IN_ABNORMAL_PHI (name))
@@ -1189,15 +1192,18 @@ execute_cse_conv_1 (tree name)
 	  || !types_compatible_p (TREE_TYPE (name), TREE_TYPE (lhs)))
 	continue;
 
-      if (gimple_bb (def_stmt) == gimple_bb (use_stmt)
-	  || dominated_by_p (CDI_DOMINATORS, gimple_bb (use_stmt),
-			     gimple_bb (def_stmt)))
+      basic_block use_bb = gimple_bb (use_stmt);
+      if (gimple_bb (def_stmt) == use_bb
+	  || dominated_by_p (CDI_DOMINATORS, use_bb, gimple_bb (def_stmt)))
 	{
 	  sincos_stats.conv_removed++;
 
 	  gimple_stmt_iterator gsi = gsi_for_stmt (use_stmt);
 	  replace_uses_by (lhs, name);
-	  gsi_remove (&gsi, true);
+	  if (gsi_remove (&gsi, true)
+	      && gimple_purge_dead_eh_edges (use_bb))
+	    *cfg_changed = true;
+	  release_defs (use_stmt);
 	}
     }
 
@@ -1252,7 +1258,7 @@ execute_cse_sincos_1 (tree name)
   int i;
   bool cfg_changed = false;
 
-  name = execute_cse_conv_1 (name);
+  name = execute_cse_conv_1 (name, &cfg_changed);
 
   FOR_EACH_IMM_USE_STMT (use_stmt, use_iter, name)
     {
@@ -1459,7 +1465,7 @@ powi_cost (HOST_WIDE_INT n)
     return 0;
 
   /* Ignore the reciprocal when calculating the cost.  */
-  val = (n < 0) ? -n : n;
+  val = absu_hwi (n);
 
   /* Initialize the exponent cache.  */
   memset (cache, 0, POWI_TABLE_SIZE * sizeof (bool));
@@ -1492,7 +1498,7 @@ powi_cost (HOST_WIDE_INT n)
 
 static tree
 powi_as_mults_1 (gimple_stmt_iterator *gsi, location_t loc, tree type,
-		 HOST_WIDE_INT n, tree *cache)
+		 unsigned HOST_WIDE_INT n, tree *cache)
 {
   tree op0, op1, ssa_target;
   unsigned HOST_WIDE_INT digit;
@@ -1545,7 +1551,7 @@ powi_as_mults (gimple_stmt_iterator *gsi, location_t loc,
   memset (cache, 0, sizeof (cache));
   cache[1] = arg0;
 
-  result = powi_as_mults_1 (gsi, loc, type, (n < 0) ? -n : n, cache);
+  result = powi_as_mults_1 (gsi, loc, type, absu_hwi (n), cache);
   if (n >= 0)
     return result;
 
@@ -1569,11 +1575,9 @@ static tree
 gimple_expand_builtin_powi (gimple_stmt_iterator *gsi, location_t loc, 
 			    tree arg0, HOST_WIDE_INT n)
 {
-  /* Avoid largest negative number.  */
-  if (n != -n
-      && ((n >= -1 && n <= 2)
-	  || (optimize_function_for_speed_p (cfun)
-	      && powi_cost (n) <= POWI_MAX_MULTS)))
+  if ((n >= -1 && n <= 2)
+      || (optimize_function_for_speed_p (cfun)
+	  && powi_cost (n) <= POWI_MAX_MULTS))
     return powi_as_mults (gsi, loc, arg0, n);
 
   return NULL_TREE;
@@ -2248,14 +2252,14 @@ public:
   {}
 
   /* opt_pass methods: */
-  virtual bool gate (function *)
+  bool gate (function *) final override
     {
       /* We no longer require either sincos or cexp, since powi expansion
 	 piggybacks on this pass.  */
       return optimize;
     }
 
-  virtual unsigned int execute (function *);
+  unsigned int execute (function *) final override;
 
 }; // class pass_cse_sincos
 
@@ -4859,7 +4863,8 @@ optimize_spaceship (gimple *stmt)
 
   wide_int wm1 = wi::minus_one (TYPE_PRECISION (integer_type_node));
   wide_int w2 = wi::two (TYPE_PRECISION (integer_type_node));
-  set_range_info (lhs, VR_RANGE, wm1, w2);
+  value_range vr (TREE_TYPE (lhs), wm1, w2);
+  set_range_info (lhs, vr);
 }
 
 
@@ -4890,12 +4895,12 @@ public:
   {}
 
   /* opt_pass methods: */
-  virtual bool gate (function *)
+  bool gate (function *) final override
     {
       return flag_expensive_optimizations && optimize;
     }
 
-  virtual unsigned int execute (function *);
+  unsigned int execute (function *) final override;
 
 }; // class pass_optimize_widening_mul
 
@@ -4913,7 +4918,7 @@ public:
 
   /* The actual actions performed in the walk.  */
 
-  virtual void after_dom_children (basic_block);
+  void after_dom_children (basic_block) final override;
 
   /* Set of results of chains of multiply and add statement combinations that
      were not transformed into FMAs because of active deferring.  */

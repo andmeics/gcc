@@ -160,7 +160,7 @@ enum loongarch_load_imm_method
 struct loongarch_integer_op
 {
   enum rtx_code code;
-  unsigned HOST_WIDE_INT value;
+  HOST_WIDE_INT value;
   enum loongarch_load_imm_method method;
 };
 
@@ -189,7 +189,7 @@ const enum reg_class loongarch_regno_to_class[FIRST_PSEUDO_REGISTER] = {
     GR_REGS,	     GR_REGS,	      GR_REGS,	       GR_REGS,
     JIRL_REGS,       JIRL_REGS,       JIRL_REGS,       JIRL_REGS,
     JIRL_REGS,       JIRL_REGS,       JIRL_REGS,       JIRL_REGS,
-    SIBCALL_REGS,    SIBCALL_REGS,    SIBCALL_REGS,    SIBCALL_REGS,
+    SIBCALL_REGS,    JIRL_REGS,       SIBCALL_REGS,    SIBCALL_REGS,
     SIBCALL_REGS,    SIBCALL_REGS,    SIBCALL_REGS,    SIBCALL_REGS,
     SIBCALL_REGS,    GR_REGS,	      GR_REGS,	       JIRL_REGS,
     JIRL_REGS,       JIRL_REGS,       JIRL_REGS,       JIRL_REGS,
@@ -328,6 +328,9 @@ loongarch_flatten_aggregate_field (const_tree type,
 	  {
 	    if (!TYPE_P (TREE_TYPE (f)))
 	      return -1;
+
+	    if (DECL_SIZE (f) && integer_zerop (DECL_SIZE (f)))
+	      continue;
 
 	    HOST_WIDE_INT pos = offset + int_byte_position (f);
 	    n = loongarch_flatten_aggregate_field (TREE_TYPE (f), fields, n,
@@ -473,13 +476,14 @@ loongarch_pass_aggregate_in_fpr_and_gpr_p (const_tree type,
 
 static rtx
 loongarch_pass_fpr_single (machine_mode type_mode, unsigned regno,
-			   machine_mode value_mode)
+			   machine_mode value_mode,
+			   HOST_WIDE_INT offset)
 {
   rtx x = gen_rtx_REG (value_mode, regno);
 
   if (type_mode != value_mode)
     {
-      x = gen_rtx_EXPR_LIST (VOIDmode, x, const0_rtx);
+      x = gen_rtx_EXPR_LIST (VOIDmode, x, GEN_INT (offset));
       x = gen_rtx_PARALLEL (type_mode, gen_rtvec (1, x));
     }
   return x;
@@ -539,7 +543,8 @@ loongarch_get_arg_info (struct loongarch_arg_info *info,
 	  {
 	  case 1:
 	    return loongarch_pass_fpr_single (mode, fregno,
-					      TYPE_MODE (fields[0].type));
+					      TYPE_MODE (fields[0].type),
+					      fields[0].offset);
 
 	  case 2:
 	    return loongarch_pass_fpr_pair (mode, fregno,
@@ -912,8 +917,12 @@ loongarch_compute_frame_info (void)
   frame->frame_pointer_offset = offset;
   /* Next are the callee-saved FPRs.  */
   if (frame->fmask)
-    offset += LARCH_STACK_ALIGN (num_f_saved * UNITS_PER_FP_REG);
-  frame->fp_sp_offset = offset - UNITS_PER_FP_REG;
+    {
+      offset += LARCH_STACK_ALIGN (num_f_saved * UNITS_PER_FP_REG);
+      frame->fp_sp_offset = offset - UNITS_PER_FP_REG;
+    }
+  else
+    frame->fp_sp_offset = offset;
   /* Next are the callee-saved GPRs.  */
   if (frame->mask)
     {
@@ -926,8 +935,10 @@ loongarch_compute_frame_info (void)
 	frame->save_libcall_adjustment = x_save_size;
 
       offset += x_save_size;
+      frame->gp_sp_offset = offset - UNITS_PER_WORD;
     }
-  frame->gp_sp_offset = offset - UNITS_PER_WORD;
+  else
+    frame->gp_sp_offset = offset;
   /* The hard frame pointer points above the callee-saved GPRs.  */
   frame->hard_frame_pointer_offset = offset;
   /* Above the hard frame pointer is the callee-allocated varags save area.  */
@@ -1463,7 +1474,7 @@ loongarch_build_integer (struct loongarch_integer_op *codes,
   unsigned int cost = 0;
 
   /* Get the lower 32 bits of the value.  */
-  HOST_WIDE_INT low_part = TARGET_64BIT ? value << 32 >> 32 : value;
+  HOST_WIDE_INT low_part = (int32_t)value;
 
   if (IMM12_OPERAND (low_part) || IMM12_OPERAND_UNSIGNED (low_part))
     {
@@ -1497,6 +1508,7 @@ loongarch_build_integer (struct loongarch_integer_op *codes,
       bool lu52i[2] = {(value & LU52I_B) == 0, (value & LU52I_B) == LU52I_B};
 
       int sign31 = (value & (1UL << 31)) >> 31;
+      int sign51 = (value & (1UL << 51)) >> 51;
       /* Determine whether the upper 32 bits are sign-extended from the lower
 	 32 bits. If it is, the instructions to load the high order can be
 	 ommitted.  */
@@ -1507,12 +1519,12 @@ loongarch_build_integer (struct loongarch_integer_op *codes,
       else if (lu32i[sign31])
 	{
 	  codes[cost].method = METHOD_LU52I;
-	  codes[cost].value = (value >> 52) << 52;
+	  codes[cost].value = value & LU52I_B;
 	  return cost + 1;
 	}
 
       codes[cost].method = METHOD_LU32I;
-      codes[cost].value = ((value << 12) >> 44) << 32;
+      codes[cost].value = (value & LU32I_B) | (sign51 ? LU52I_B : 0);
       cost++;
 
       /* Determine whether the 52-61 bits are sign-extended from the low order,
@@ -1520,7 +1532,7 @@ loongarch_build_integer (struct loongarch_integer_op *codes,
       if (!lu52i[(value & (1ULL << 51)) >> 51])
 	{
 	  codes[cost].method = METHOD_LU52I;
-	  codes[cost].value = (value >> 52) << 52;
+	  codes[cost].value = value & LU52I_B;
 	  cost++;
 	}
     }
@@ -2096,6 +2108,19 @@ loongarch_load_store_insns (rtx mem, rtx_insn *insn)
   return loongarch_address_insns (XEXP (mem, 0), mode, might_split_p);
 }
 
+/* Return true if we need to trap on division by zero.  */
+
+bool
+loongarch_check_zero_div_p (void)
+{
+  /* if -m[no-]check-zero-division is given explicitly.  */
+  if (target_flags_explicit & MASK_CHECK_ZERO_DIV)
+    return TARGET_CHECK_ZERO_DIV;
+
+  /* if not, don't trap for optimized code except -Og.  */
+  return !optimize || optimize_debug;
+}
+
 /* Return the number of instructions needed for an integer division.  */
 
 int
@@ -2104,7 +2129,7 @@ loongarch_idiv_insns (machine_mode mode ATTRIBUTE_UNUSED)
   int count;
 
   count = 1;
-  if (TARGET_CHECK_ZERO_DIV)
+  if (loongarch_check_zero_div_p ())
     count += 2;
 
   return count;
@@ -4045,7 +4070,6 @@ loongarch_do_optimize_block_move_p (void)
   return !optimize_size;
 }
 
-
 /* Expand a QI or HI mode atomic memory operation.
 
    GENERATOR contains a pointer to the gen_* function that generates
@@ -5257,7 +5281,7 @@ loongarch_output_division (const char *division, rtx *operands)
   const char *s;
 
   s = division;
-  if (TARGET_CHECK_ZERO_DIV)
+  if (loongarch_check_zero_div_p ())
     {
       output_asm_insn (s, operands);
       s = "bne\t%2,%.,1f\n\tbreak\t7\n1:";
