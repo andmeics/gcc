@@ -917,8 +917,12 @@ loongarch_compute_frame_info (void)
   frame->frame_pointer_offset = offset;
   /* Next are the callee-saved FPRs.  */
   if (frame->fmask)
-    offset += LARCH_STACK_ALIGN (num_f_saved * UNITS_PER_FP_REG);
-  frame->fp_sp_offset = offset - UNITS_PER_FP_REG;
+    {
+      offset += LARCH_STACK_ALIGN (num_f_saved * UNITS_PER_FP_REG);
+      frame->fp_sp_offset = offset - UNITS_PER_FP_REG;
+    }
+  else
+    frame->fp_sp_offset = offset;
   /* Next are the callee-saved GPRs.  */
   if (frame->mask)
     {
@@ -931,8 +935,10 @@ loongarch_compute_frame_info (void)
 	frame->save_libcall_adjustment = x_save_size;
 
       offset += x_save_size;
+      frame->gp_sp_offset = offset - UNITS_PER_WORD;
     }
-  frame->gp_sp_offset = offset - UNITS_PER_WORD;
+  else
+    frame->gp_sp_offset = offset;
   /* The hard frame pointer points above the callee-saved GPRs.  */
   frame->hard_frame_pointer_offset = offset;
   /* Above the hard frame pointer is the callee-allocated varags save area.  */
@@ -2102,6 +2108,19 @@ loongarch_load_store_insns (rtx mem, rtx_insn *insn)
   return loongarch_address_insns (XEXP (mem, 0), mode, might_split_p);
 }
 
+/* Return true if we need to trap on division by zero.  */
+
+bool
+loongarch_check_zero_div_p (void)
+{
+  /* if -m[no-]check-zero-division is given explicitly.  */
+  if (target_flags_explicit & MASK_CHECK_ZERO_DIV)
+    return TARGET_CHECK_ZERO_DIV;
+
+  /* if not, don't trap for optimized code except -Og.  */
+  return !optimize || optimize_debug;
+}
+
 /* Return the number of instructions needed for an integer division.  */
 
 int
@@ -2110,7 +2129,7 @@ loongarch_idiv_insns (machine_mode mode ATTRIBUTE_UNUSED)
   int count;
 
   count = 1;
-  if (TARGET_CHECK_ZERO_DIV)
+  if (loongarch_check_zero_div_p ())
     count += 2;
 
   return count;
@@ -4051,7 +4070,6 @@ loongarch_do_optimize_block_move_p (void)
   return !optimize_size;
 }
 
-
 /* Expand a QI or HI mode atomic memory operation.
 
    GENERATOR contains a pointer to the gen_* function that generates
@@ -5263,7 +5281,7 @@ loongarch_output_division (const char *division, rtx *operands)
   const char *s;
 
   s = division;
-  if (TARGET_CHECK_ZERO_DIV)
+  if (loongarch_check_zero_div_p ())
     {
       output_asm_insn (s, operands);
       s = "bne\t%2,%.,1f\n\tbreak\t7\n1:";

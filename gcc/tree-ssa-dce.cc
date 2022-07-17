@@ -1026,7 +1026,8 @@ remove_dead_phis (basic_block bb)
 	{
 	  /* Virtual PHI nodes with one or identical arguments
 	     can be removed.  */
-	  if (degenerate_phi_p (phi))
+	  if (!loops_state_satisfies_p (LOOP_CLOSED_SSA)
+	      && degenerate_phi_p (phi))
 	    {
 	      tree vdef = gimple_phi_result (phi);
 	      tree vuse = gimple_phi_arg_def (phi, 0);
@@ -2058,6 +2059,13 @@ simple_dce_from_worklist (bitmap worklist)
 
       gimple *t = SSA_NAME_DEF_STMT (def);
       if (gimple_has_side_effects (t))
+	continue;
+
+      /* The defining statement needs to be defining only this name.
+	 ASM is the only statement that can define more than one
+	 (non-virtual) name. */
+      if (is_a<gasm *>(t)
+	  && !single_ssa_def_operand (t, SSA_OP_DEF))
 	continue;
 
       /* Don't remove statements that are needed for non-call

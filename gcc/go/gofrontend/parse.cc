@@ -191,7 +191,11 @@ Parse::qualified_ident(std::string* pname, Named_object** ppackage)
   Named_object* package = this->gogo_->lookup(name, NULL);
   if (package == NULL || !package->is_package())
     {
-      go_error_at(this->location(), "expected package");
+      if (package == NULL)
+	go_error_at(this->location(), "reference to undefined name %qs",
+		    Gogo::message_name(name).c_str());
+      else
+	go_error_at(this->location(), "expected package");
       // We expect . IDENTIFIER; skip both.
       if (this->advance_token()->is_identifier())
 	this->advance_token();
@@ -1977,7 +1981,11 @@ Parse::init_vars_from_map(const Typed_identifier_list* vars, Type* type,
   else if (!val_no->is_sink())
     {
       if (val_no->is_variable())
-	val_no->var_value()->add_preinit_statement(this->gogo_, s);
+	{
+	  val_no->var_value()->add_preinit_statement(this->gogo_, s);
+	  if (no->is_variable())
+	    this->gogo_->record_var_depends_on(no->var_value(), val_no);
+	}
     }
   else if (!no->is_sink())
     {
@@ -2044,7 +2052,11 @@ Parse::init_vars_from_receive(const Typed_identifier_list* vars, Type* type,
   else if (!val_no->is_sink())
     {
       if (val_no->is_variable())
-	val_no->var_value()->add_preinit_statement(this->gogo_, s);
+	{
+	  val_no->var_value()->add_preinit_statement(this->gogo_, s);
+	  if (no->is_variable())
+	    this->gogo_->record_var_depends_on(no->var_value(), val_no);
+	}
     }
   else if (!no->is_sink())
     {
@@ -2110,7 +2122,11 @@ Parse::init_vars_from_type_guard(const Typed_identifier_list* vars,
   else if (!val_no->is_sink())
     {
       if (val_no->is_variable())
-	val_no->var_value()->add_preinit_statement(this->gogo_, s);
+	{
+	  val_no->var_value()->add_preinit_statement(this->gogo_, s);
+	  if (no->is_variable())
+	    this->gogo_->record_var_depends_on(no->var_value(), val_no);
+	}
     }
   else if (!no->is_sink())
     {

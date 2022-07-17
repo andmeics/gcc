@@ -1476,6 +1476,67 @@ diagnostic_manager::build_emission_path (const path_builder &pb,
       const exploded_edge *eedge = epath.m_edges[i];
       add_events_for_eedge (pb, *eedge, emission_path, &interest);
     }
+  add_event_on_final_node (epath.get_final_enode (), emission_path, &interest);
+}
+
+/* Emit a region_creation_event when requested on the last statement in
+   the path.
+
+   If a region_creation_event should be emitted on the last statement of the
+   path, we need to peek to the successors to get whether the final enode
+   created a region.
+*/
+
+void
+diagnostic_manager::add_event_on_final_node (const exploded_node *final_enode,
+					     checker_path *emission_path,
+					     interesting_t *interest) const
+{
+  const program_point &src_point = final_enode->get_point ();
+  const int src_stack_depth = src_point.get_stack_depth ();
+  const program_state &src_state = final_enode->get_state ();
+  const region_model *src_model = src_state.m_region_model;
+
+  unsigned j;
+  exploded_edge *e;
+  FOR_EACH_VEC_ELT (final_enode->m_succs, j, e)
+  {
+    exploded_node *dst = e->m_dest;
+    const program_state &dst_state = dst->get_state ();
+    const region_model *dst_model = dst_state.m_region_model;
+    if (src_model->get_dynamic_extents ()
+	!= dst_model->get_dynamic_extents ())
+      {
+	unsigned i;
+	const region *reg;
+	bool emitted = false;
+	FOR_EACH_VEC_ELT (interest->m_region_creation, i, reg)
+	  {
+	    const region *base_reg = reg->get_base_region ();
+	    const svalue *old_extents
+	= src_model->get_dynamic_extents (base_reg);
+	    const svalue *new_extents
+	= dst_model->get_dynamic_extents (base_reg);
+	    if (old_extents == NULL && new_extents != NULL)
+	      switch (base_reg->get_kind ())
+		{
+		default:
+		  break;
+		case RK_HEAP_ALLOCATED:
+		case RK_ALLOCA:
+		  emission_path->add_region_creation_event
+		    (reg,
+		    src_point.get_location (),
+		    src_point.get_fndecl (),
+		    src_stack_depth);
+		  emitted = true;
+		  break;
+		}
+	  }
+	if (emitted)
+	  break;
+      }
+  }
 }
 
 /* Subclass of state_change_visitor that creates state_change_event
@@ -2236,8 +2297,7 @@ diagnostic_manager::prune_for_sm_diagnostic (checker_path *path,
 		  label_text sval_desc = sval->get_desc ();
 		  log ("considering event %i (%s), with sval: %qs, state: %qs",
 		       idx, event_kind_to_string (base_event->m_kind),
-		       sval_desc.m_buffer, state->get_name ());
-		  sval_desc.maybe_free ();
+		       sval_desc.get (), state->get_name ());
 		}
 	      else
 		log ("considering event %i (%s), with global state: %qs",
@@ -2303,10 +2363,8 @@ diagnostic_manager::prune_for_sm_diagnostic (checker_path *path,
 			  = state_change->m_origin->get_desc ();
 			log ("event %i:"
 			     " switching var of interest from %qs to %qs",
-			     idx, sval_desc.m_buffer,
-			     origin_sval_desc.m_buffer);
-			sval_desc.maybe_free ();
-			origin_sval_desc.maybe_free ();
+			     idx, sval_desc.get (),
+			     origin_sval_desc.get ());
 		      }
 		    sval = state_change->m_origin;
 		  }
@@ -2328,13 +2386,12 @@ diagnostic_manager::prune_for_sm_diagnostic (checker_path *path,
 			    label_text sval_desc = sval->get_desc ();
 			    log ("filtering event %i:"
 				 " state change to %qs unrelated to %qs",
-				 idx, change_sval_desc.m_buffer,
-				 sval_desc.m_buffer);
+				 idx, change_sval_desc.get (),
+				 sval_desc.get ());
 			  }
 			else
 			  log ("filtering event %i: state change to %qs",
-			       idx, change_sval_desc.m_buffer);
-			change_sval_desc.maybe_free ();
+			       idx, change_sval_desc.get ());
 		      }
 		    else
 		      log ("filtering event %i: global state change", idx);
@@ -2403,8 +2460,7 @@ diagnostic_manager::prune_for_sm_diagnostic (checker_path *path,
 		    log ("event %i:"
 			 " recording critical state for %qs at call"
 			 " from %qE in callee to %qE in caller",
-			 idx, sval_desc.m_buffer, callee_var, caller_var);
-		    sval_desc.maybe_free ();
+			 idx, sval_desc.get (), callee_var, caller_var);
 		  }
 		if (expr.param_p ())
 		  event->record_critical_state (caller_var, state);
@@ -2447,8 +2503,7 @@ diagnostic_manager::prune_for_sm_diagnostic (checker_path *path,
 			log ("event %i:"
 			     " recording critical state for %qs at return"
 			     " from %qE in caller to %qE in callee",
-			     idx, sval_desc.m_buffer, callee_var, callee_var);
-			sval_desc.maybe_free ();
+			     idx, sval_desc.get (), callee_var, callee_var);
 		      }
 		    if (expr.return_value_p ())
 		      event->record_critical_state (callee_var, state);
@@ -2531,8 +2586,7 @@ diagnostic_manager::prune_interproc_events (checker_path *path) const
 		    (path->get_checker_event (idx)->get_desc (false));
 		  log ("filtering events %i-%i:"
 		       " irrelevant call/entry/return: %s",
-		       idx, idx + 2, desc.m_buffer);
-		  desc.maybe_free ();
+		       idx, idx + 2, desc.get ());
 		}
 	      path->delete_event (idx + 2);
 	      path->delete_event (idx + 1);
@@ -2554,8 +2608,7 @@ diagnostic_manager::prune_interproc_events (checker_path *path) const
 		    (path->get_checker_event (idx)->get_desc (false));
 		  log ("filtering events %i-%i:"
 		       " irrelevant call/return: %s",
-		       idx, idx + 1, desc.m_buffer);
-		  desc.maybe_free ();
+		       idx, idx + 1, desc.get ());
 		}
 	      path->delete_event (idx + 1);
 	      path->delete_event (idx);

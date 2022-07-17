@@ -575,10 +575,6 @@
 (define_mode_iterator VIMAX_AVX2
   [(V2TI "TARGET_AVX2") V1TI])
 
-;; ??? This should probably be dropped in favor of VIMAX_AVX2_AVX512BW.
-(define_mode_iterator SSESCALARMODE
-  [(V4TI "TARGET_AVX512BW") (V2TI "TARGET_AVX2") TI])
-
 (define_mode_iterator VI12_AVX2
   [(V32QI "TARGET_AVX2") V16QI
    (V16HI "TARGET_AVX2") V8HI])
@@ -712,7 +708,7 @@
     (V4HI "ssse3") (V8HI "ssse3") (V16HI "avx2") (V32HI "avx512bw")
     (V4SI "ssse3") (V8SI "avx2")
     (V2DI "ssse3") (V4DI "avx2")
-    (TI "ssse3") (V2TI "avx2") (V4TI "avx512bw")])
+    (V1TI "ssse3") (V2TI "avx2") (V4TI "avx512bw")])
 
 (define_mode_attr sse4_1_avx2
    [(V16QI "sse4_1") (V32QI "avx2") (V64QI "avx512bw")
@@ -9176,11 +9172,27 @@
    (set_attr "prefix" "evex")
    (set_attr "mode" "<sseinsnmode>")])
 
+(define_expand "extendv2sfv2df2"
+  [(set (match_operand:V2DF 0 "register_operand")
+	(float_extend:V2DF
+	  (match_operand:V2SF 1 "nonimmediate_operand")))]
+  "TARGET_MMX_WITH_SSE"
+{
+  if (!MEM_P (operands[1]))
+    {
+      operands[1] = lowpart_subreg (V4SFmode,
+				    force_reg (V2SFmode, operands[1]),
+				    V2SFmode);
+      emit_insn (gen_sse2_cvtps2pd (operands[0], operands[1]));
+      DONE;
+    }
+})
+
 (define_insn "sse2_cvtps2pd<mask_name>"
   [(set (match_operand:V2DF 0 "register_operand" "=v")
 	(float_extend:V2DF
 	  (vec_select:V2SF
-	    (match_operand:V4SF 1 "vector_operand" "vm")
+	    (match_operand:V4SF 1 "register_operand" "v")
 	    (parallel [(const_int 0) (const_int 1)]))))]
   "TARGET_SSE2 && <mask_avx512vl_condition>"
   "%vcvtps2pd\t{%1, %0<mask_operand2>|%0<mask_operand2>, %q1}"
@@ -9192,12 +9204,12 @@
    (set_attr "prefix" "maybe_vex")
    (set_attr "mode" "V2DF")])
 
-(define_insn "extendv2sfv2df2"
+(define_insn "sse2_cvtps2pd<mask_name>_1"
   [(set (match_operand:V2DF 0 "register_operand" "=v")
 	(float_extend:V2DF
-	  (match_operand:V2SF 1 "register_operand" "v")))]
-  "TARGET_MMX_WITH_SSE"
-  "%vcvtps2pd\t{%1, %0|%0, %1}"
+	  (match_operand:V2SF 1 "memory_operand" "m")))]
+  "TARGET_SSE2 && <mask_avx512vl_condition>"
+  "%vcvtps2pd\t{%1, %0<mask_operand2>|%0<mask_operand2>, %q1}"
   [(set_attr "type" "ssecvt")
    (set_attr "amdfam10_decode" "direct")
    (set_attr "athlon_decode" "double")
@@ -9254,7 +9266,15 @@
 	  (vec_select:V2SF
 	    (match_operand:V4SF 1 "vector_operand")
 	    (parallel [(const_int 0) (const_int 1)]))))]
-  "TARGET_SSE2")
+  "TARGET_SSE2"
+{
+  if (MEM_P (operands[1]))
+    {
+      operands[1] = adjust_address_nv (operands[1], V2SFmode, 0);
+      emit_insn (gen_sse2_cvtps2pd_1 (operands[0], operands[1]));
+      DONE;
+    }
+})
 
 (define_expand "vec_unpacks_lo_v8sf"
   [(set (match_operand:V4DF 0 "register_operand")
@@ -21092,10 +21112,10 @@
    (set_attr "mode" "<sseinsnmode>")])
 
 (define_insn "<ssse3_avx2>_palignr<mode>"
-  [(set (match_operand:SSESCALARMODE 0 "register_operand" "=x,<v_Yw>")
-	(unspec:SSESCALARMODE
-	  [(match_operand:SSESCALARMODE 1 "register_operand" "0,<v_Yw>")
-	   (match_operand:SSESCALARMODE 2 "vector_operand" "xBm,<v_Yw>m")
+  [(set (match_operand:VIMAX_AVX2_AVX512BW 0 "register_operand" "=x,<v_Yw>")
+	(unspec:VIMAX_AVX2_AVX512BW
+	  [(match_operand:VIMAX_AVX2_AVX512BW 1 "register_operand" "0,<v_Yw>")
+	   (match_operand:VIMAX_AVX2_AVX512BW 2 "vector_operand" "xBm,<v_Yw>m")
 	   (match_operand:SI 3 "const_0_to_255_mul_8_operand")]
 	  UNSPEC_PALIGNR))]
   "TARGET_SSSE3"
@@ -21141,11 +21161,30 @@
       gcc_unreachable ();
     }
 }
-  "TARGET_SSSE3 && reload_completed
-   && SSE_REGNO_P (REGNO (operands[0]))"
+  "(TARGET_SSSE3 && reload_completed
+    && SSE_REGNO_P (REGNO (operands[0])))
+   || operands[3] == const0_rtx
+   || INTVAL (operands[3]) == 64"
   [(set (match_dup 0)
 	(lshiftrt:V1TI (match_dup 0) (match_dup 3)))]
 {
+  if (operands[3] == const0_rtx)
+    {
+      if (!rtx_equal_p (operands[0], operands[2]))
+	emit_move_insn (operands[0], operands[2]);
+      else
+	emit_note (NOTE_INSN_DELETED);
+      DONE;
+    }
+  else if (INTVAL (operands[3]) == 64)
+    {
+      if (!rtx_equal_p (operands[0], operands[1]))
+	emit_move_insn (operands[0], operands[1]);
+      else
+	emit_note (NOTE_INSN_DELETED);
+      DONE;
+    }
+
   /* Emulate MMX palignrdi with SSE psrldq.  */
   rtx op0 = lowpart_subreg (V2DImode, operands[0],
 			    GET_MODE (operands[0]));

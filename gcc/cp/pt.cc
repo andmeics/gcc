@@ -27,6 +27,7 @@ along with GCC; see the file COPYING3.  If not see
      Fixed by: C++20 modules.  */
 
 #include "config.h"
+#define INCLUDE_ALGORITHM // for std::equal
 #include "system.h"
 #include "coretypes.h"
 #include "cp-tree.h"
@@ -390,7 +391,9 @@ template_class_depth (tree type)
     {
       tree tinfo = get_template_info (type);
 
-      if (tinfo && PRIMARY_TEMPLATE_P (TI_TEMPLATE (tinfo))
+      if (tinfo
+	  && TREE_CODE (TI_TEMPLATE (tinfo)) == TEMPLATE_DECL
+	  && PRIMARY_TEMPLATE_P (TI_TEMPLATE (tinfo))
 	  && uses_template_parms (INNERMOST_TEMPLATE_ARGS (TI_ARGS (tinfo))))
 	++depth;
 
@@ -4914,6 +4917,32 @@ template_parm_to_arg (tree t)
 	t = convert_from_reference (t);
     }
   return t;
+}
+
+/* If T looks like a generic template argument produced by template_parm_to_arg,
+   return the corresponding template parameter, otherwise return NULL_TREE.  */
+
+static tree
+template_arg_to_parm (tree t)
+{
+  if (t == NULL_TREE)
+    return NULL_TREE;
+
+  if (ARGUMENT_PACK_P (t))
+    {
+      tree args = ARGUMENT_PACK_ARGS (t);
+      if (TREE_VEC_LENGTH (args) == 1
+	  && PACK_EXPANSION_P (TREE_VEC_ELT (args, 0)))
+	t = PACK_EXPANSION_PATTERN (TREE_VEC_ELT (args, 0));
+    }
+
+  if (REFERENCE_REF_P (t))
+    t = TREE_OPERAND (t, 0);
+
+  if (TEMPLATE_PARM_P (t))
+    return t;
+  else
+    return NULL_TREE;
 }
 
 /* Given a single level of template parameters (a TREE_VEC), return it
@@ -10984,7 +11013,7 @@ uses_template_parms_level (tree t, int level)
 /* Returns true if the signature of DECL depends on any template parameter from
    its enclosing class.  */
 
-bool
+static bool
 uses_outer_template_parms (tree decl)
 {
   int depth = template_class_depth (CP_DECL_CONTEXT (decl));
@@ -11015,13 +11044,27 @@ uses_outer_template_parms (tree decl)
 	    return true;
 	}
     }
+  if (uses_outer_template_parms_in_constraints (decl))
+    return true;
+  return false;
+}
+
+/* Returns true if the constraints of DECL depend on any template parameters
+   from its enclosing scope.  */
+
+bool
+uses_outer_template_parms_in_constraints (tree decl)
+{
   tree ci = get_constraints (decl);
   if (ci)
     ci = CI_ASSOCIATED_CONSTRAINTS (ci);
-  if (ci && for_each_template_parm (ci, template_parm_outer_level,
-				    &depth, NULL, /*nondeduced*/true))
-    return true;
-  return false;
+  if (!ci)
+    return false;
+  int depth = template_class_depth (CP_DECL_CONTEXT (decl));
+  if (depth == 0)
+    return false;
+  return for_each_template_parm (ci, template_parm_outer_level,
+				 &depth, NULL, /*nondeduced*/true);
 }
 
 /* Returns TRUE iff INST is an instantiation we don't need to do in an
@@ -13516,26 +13559,49 @@ tree
 tsubst_argument_pack (tree orig_arg, tree args, tsubst_flags_t complain,
 		      tree in_decl)
 {
+  /* This flag is used only during deduction, and we don't expect to
+     substitute such ARGUMENT_PACKs.  */
+  gcc_assert (!ARGUMENT_PACK_INCOMPLETE_P (orig_arg));
+
   /* Substitute into each of the arguments.  */
   tree pack_args = tsubst_template_args (ARGUMENT_PACK_ARGS (orig_arg),
 					 args, complain, in_decl);
-  tree new_arg = error_mark_node;
-  if (pack_args != error_mark_node)
-    {
-      if (TYPE_P (orig_arg))
-	{
-	  new_arg = cxx_make_type (TREE_CODE (orig_arg));
-	  SET_TYPE_STRUCTURAL_EQUALITY (new_arg);
-	}
-      else
-	{
-	  new_arg = make_node (TREE_CODE (orig_arg));
-	  TREE_CONSTANT (new_arg) = TREE_CONSTANT (orig_arg);
-	}
+  if (pack_args == error_mark_node)
+    return error_mark_node;
 
-      ARGUMENT_PACK_ARGS (new_arg) = pack_args;
+  if (pack_args == ARGUMENT_PACK_ARGS (orig_arg))
+    return orig_arg;
+
+  /* If we're substituting into a generic ARGUMENT_PACK for a variadic
+     template parameter, we might be able to avoid allocating a new
+     ARGUMENT_PACK and reuse the corresponding ARGUMENT_PACK from ARGS
+     if the substituted result is identical to it.  */
+  if (tree parm = template_arg_to_parm (orig_arg))
+    {
+      int level, index;
+      template_parm_level_and_index (parm, &level, &index);
+      if (TMPL_ARGS_DEPTH (args) >= level)
+	if (tree arg = TMPL_ARG (args, level, index))
+	  if (TREE_CODE (arg) == TREE_CODE (orig_arg)
+	      && ARGUMENT_PACK_ARGS (arg) == pack_args)
+	    {
+	      gcc_assert (!ARGUMENT_PACK_INCOMPLETE_P (arg));
+	      return arg;
+	    }
     }
 
+  tree new_arg;
+  if (TYPE_P (orig_arg))
+    {
+      new_arg = cxx_make_type (TREE_CODE (orig_arg));
+      SET_TYPE_STRUCTURAL_EQUALITY (new_arg);
+    }
+  else
+    {
+      new_arg = make_node (TREE_CODE (orig_arg));
+      TREE_CONSTANT (new_arg) = TREE_CONSTANT (orig_arg);
+    }
+  ARGUMENT_PACK_ARGS (new_arg) = pack_args;
   return new_arg;
 }
 
@@ -13544,17 +13610,17 @@ tsubst_argument_pack (tree orig_arg, tree args, tsubst_flags_t complain,
 tree
 tsubst_template_args (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 {
-  tree orig_t = t;
-  int len, need_new = 0, i, expanded_len_adjust = 0, out;
-  tree *elts;
-
   if (t == error_mark_node)
     return error_mark_node;
 
-  len = TREE_VEC_LENGTH (t);
-  elts = XALLOCAVEC (tree, len);
+  const int len = TREE_VEC_LENGTH (t);
+  tree *elts = XALLOCAVEC (tree, len);
+  int expanded_len_adjust = 0;
 
-  for (i = 0; i < len; i++)
+  /* True iff the substituted result is identical to T.  */
+  bool const_subst_p = true;
+
+  for (int i = 0; i < len; i++)
     {
       tree orig_arg = TREE_VEC_ELT (t, i);
       tree new_arg;
@@ -13587,49 +13653,84 @@ tsubst_template_args (tree t, tree args, tsubst_flags_t complain, tree in_decl)
 
       elts[i] = new_arg;
       if (new_arg != orig_arg)
-	need_new = 1;
+	const_subst_p = false;
     }
 
-  if (!need_new)
+  if (const_subst_p)
     return t;
+
+  tree maybe_reuse = NULL_TREE;
+
+  /* If ARGS and T are both multi-level, the substituted result may be
+     identical to ARGS.  */
+  if (TMPL_ARGS_HAVE_MULTIPLE_LEVELS (t)
+      && TMPL_ARGS_HAVE_MULTIPLE_LEVELS (args)
+      && TMPL_ARGS_DEPTH (t) == TMPL_ARGS_DEPTH (args))
+    maybe_reuse = args;
+  /* If T appears to be a vector of generic template arguments, the
+     substituted result may be identical to the corresponding level
+     from ARGS.  */
+  else if (tree parm = template_arg_to_parm (TREE_VEC_ELT (t, 0)))
+    {
+      int level, index;
+      template_parm_level_and_index (parm, &level, &index);
+      if (index == 0 && TMPL_ARGS_DEPTH (args) >= level)
+	maybe_reuse = TMPL_ARGS_LEVEL (args, level);
+    }
+
+  /* If the substituted result is identical to MAYBE_REUSE, return
+     it and avoid allocating a new TREE_VEC, as an optimization.  */
+  if (maybe_reuse != NULL_TREE
+      && TREE_VEC_LENGTH (maybe_reuse) == len
+      && std::equal (elts, elts+len, TREE_VEC_BEGIN (maybe_reuse)))
+    return maybe_reuse;
+
+  /* If T consists of only a pack expansion for which substitution yielded
+     a TREE_VEC of the expanded elements, then reuse that TREE_VEC instead
+     of effectively making a copy.  */
+  if (len == 1
+      && PACK_EXPANSION_P (TREE_VEC_ELT (t, 0))
+      && TREE_CODE (elts[0]) == TREE_VEC)
+    return elts[0];
 
   /* Make space for the expanded arguments coming from template
      argument packs.  */
-  t = make_tree_vec (len + expanded_len_adjust);
-  /* ORIG_T can contain TREE_VECs. That happens if ORIG_T contains the
+  tree r = make_tree_vec (len + expanded_len_adjust);
+  /* T can contain TREE_VECs. That happens if T contains the
      arguments for a member template.
-     In that case each TREE_VEC in ORIG_T represents a level of template
-     arguments, and ORIG_T won't carry any non defaulted argument count.
+     In that case each TREE_VEC in T represents a level of template
+     arguments, and T won't carry any non defaulted argument count.
      It will rather be the nested TREE_VECs that will carry one.
-     In other words, ORIG_T carries a non defaulted argument count only
+     In other words, T carries a non defaulted argument count only
      if it doesn't contain any nested TREE_VEC.  */
-  if (NON_DEFAULT_TEMPLATE_ARGS_COUNT (orig_t))
+  if (NON_DEFAULT_TEMPLATE_ARGS_COUNT (t))
     {
-      int count = GET_NON_DEFAULT_TEMPLATE_ARGS_COUNT (orig_t);
+      int count = GET_NON_DEFAULT_TEMPLATE_ARGS_COUNT (t);
       count += expanded_len_adjust;
-      SET_NON_DEFAULT_TEMPLATE_ARGS_COUNT (t, count);
+      SET_NON_DEFAULT_TEMPLATE_ARGS_COUNT (r, count);
     }
-  for (i = 0, out = 0; i < len; i++)
+
+  int out = 0;
+  for (int i = 0; i < len; i++)
     {
-      tree orig_arg = TREE_VEC_ELT (orig_t, i);
+      tree orig_arg = TREE_VEC_ELT (t, i);
       if (orig_arg
-	  && (PACK_EXPANSION_P (orig_arg) || ARGUMENT_PACK_P (orig_arg))
+	  && PACK_EXPANSION_P (orig_arg)
           && TREE_CODE (elts[i]) == TREE_VEC)
         {
-          int idx;
-
           /* Now expand the template argument pack "in place".  */
-          for (idx = 0; idx < TREE_VEC_LENGTH (elts[i]); idx++, out++)
-            TREE_VEC_ELT (t, out) = TREE_VEC_ELT (elts[i], idx);
+	  for (int idx = 0; idx < TREE_VEC_LENGTH (elts[i]); idx++, out++)
+	    TREE_VEC_ELT (r, out) = TREE_VEC_ELT (elts[i], idx);
         }
       else
         {
-          TREE_VEC_ELT (t, out) = elts[i];
+	  TREE_VEC_ELT (r, out) = elts[i];
           out++;
         }
     }
+  gcc_assert (out == TREE_VEC_LENGTH (r));
 
-  return t;
+  return r;
 }
 
 /* Substitute ARGS into one level PARMS of template parameters.  */
@@ -14965,32 +15066,21 @@ tsubst_decl (tree t, tree args, tsubst_flags_t complain)
 
 	    if (!spec)
 	      {
-		int args_depth = TMPL_ARGS_DEPTH (args);
-		int parms_depth = TMPL_ARGS_DEPTH (DECL_TI_ARGS (t));
 		tmpl = DECL_TI_TEMPLATE (t);
 		gen_tmpl = most_general_template (tmpl);
-		if (args_depth == parms_depth
-		    && !PRIMARY_TEMPLATE_P (gen_tmpl))
-		  /* The DECL_TI_ARGS in this case are the generic template
-		     arguments for the enclosing class template, so we can
-		     shortcut substitution (which would just be the identity
-		     mapping).  */
-		  argvec = args;
-		else
-		  {
-		    argvec = tsubst (DECL_TI_ARGS (t), args, complain, in_decl);
-		    /* Coerce the innermost arguments again if necessary.  If
-		       there's fewer levels of args than of parms, then the
-		       substitution could not have changed the innermost args
-		       (modulo level lowering).  */
-		    if (args_depth >= parms_depth && argvec != error_mark_node)
-		      argvec = (coerce_innermost_template_parms
-				(DECL_TEMPLATE_PARMS (gen_tmpl),
-				 argvec, t, complain,
-				 /*all*/true, /*defarg*/true));
-		    if (argvec == error_mark_node)
-		      RETURN (error_mark_node);
-		  }
+		argvec = tsubst (DECL_TI_ARGS (t), args, complain, in_decl);
+		if (argvec != error_mark_node
+		    && PRIMARY_TEMPLATE_P (gen_tmpl)
+		    && TMPL_ARGS_DEPTH (args) >= TMPL_ARGS_DEPTH (argvec))
+		  /* We're fully specializing a template declaration, so
+		     we need to coerce the innermost arguments corresponding to
+		     the template.  */
+		  argvec = (coerce_innermost_template_parms
+			    (DECL_TEMPLATE_PARMS (gen_tmpl),
+			     argvec, t, complain,
+			     /*all*/true, /*defarg*/true));
+		if (argvec == error_mark_node)
+		  RETURN (error_mark_node);
 		hash = spec_hasher::hash (gen_tmpl, argvec);
 		spec = retrieve_specialization (gen_tmpl, argvec, hash);
 	      }
@@ -21116,12 +21206,12 @@ tsubst_copy_and_build (tree t,
 	    bool ord = CALL_EXPR_ORDERED_ARGS (t);
 	    bool rev = CALL_EXPR_REVERSE_ARGS (t);
 	    if (op || ord || rev)
-	      {
-		function = extract_call_expr (ret);
-		CALL_EXPR_OPERATOR_SYNTAX (function) = op;
-		CALL_EXPR_ORDERED_ARGS (function) = ord;
-		CALL_EXPR_REVERSE_ARGS (function) = rev;
-	      }
+	      if (tree call = extract_call_expr (ret))
+		{
+		  CALL_EXPR_OPERATOR_SYNTAX (call) = op;
+		  CALL_EXPR_ORDERED_ARGS (call) = ord;
+		  CALL_EXPR_REVERSE_ARGS (call) = rev;
+		}
 	  }
 
 	RETURN (ret);
@@ -28028,6 +28118,17 @@ type_dependent_expression_p (tree expression)
 		  || undeduced_auto_decl (expression));
       return false;
     }
+
+  /* Otherwise, its constraints could still depend on outer template parameters
+     from its (dependent) scope.  */
+  if (TREE_CODE (expression) == FUNCTION_DECL
+      /* As an optimization, check this cheaper sufficient condition first.
+	 (At this point we've established that we're looking at a member of
+	 a dependent class, so it makes sense to start treating say undeduced
+	 auto as dependent.)  */
+      && !dependent_type_p (TREE_TYPE (expression))
+      && uses_outer_template_parms_in_constraints (expression))
+    return true;
 
   /* Always dependent, on the number of arguments if nothing else.  */
   if (TREE_CODE (expression) == EXPR_PACK_EXPANSION)

@@ -446,6 +446,11 @@ Objective-C and Objective-C++ Dialects}.
 -Wno-analyzer-double-fclose @gol
 -Wno-analyzer-double-free @gol
 -Wno-analyzer-exposure-through-output-file @gol
+-Wno-analyzer-fd-access-mode-mismatch @gol
+-Wno-analyzer-fd-double-close @gol
+-Wno-analyzer-fd-leak @gol
+-Wno-analyzer-fd-use-after-close @gol
+-Wno-analyzer-fd-use-without-check @gol
 -Wno-analyzer-file-leak @gol
 -Wno-analyzer-free-of-non-heap @gol
 -Wno-analyzer-malloc-leak @gol
@@ -9739,9 +9744,15 @@ This analysis is much more expensive than other GCC warnings.
 Enabling this option effectively enables the following warnings:
 
 @gccoptlist{ @gol
+-Wanalyzer-allocation-size @gol
 -Wanalyzer-double-fclose @gol
 -Wanalyzer-double-free @gol
 -Wanalyzer-exposure-through-output-file @gol
+-Wanalyzer-fd-access-mode-mismatch @gol
+-Wanalyzer-fd-double-close @gol
+-Wanalyzer-fd-leak @gol
+-Wanalyzer-fd-use-after-close @gol
+-Wanalyzer-fd-use-without-check @gol
 -Wanalyzer-file-leak @gol
 -Wanalyzer-free-of-non-heap @gol
 -Wanalyzer-malloc-leak @gol
@@ -9786,6 +9797,19 @@ By default, the analysis silently stops if the code is too
 complicated for the analyzer to fully explore and it reaches an internal
 limit.  The @option{-Wanalyzer-too-complex} option warns if this occurs.
 
+@item -Wno-analyzer-allocation-size
+@opindex Wanalyzer-allocation-size
+@opindex Wno-analyzer-allocation-size
+This warning requires @option{-fanalyzer}, which enables it; use
+@option{-Wno-analyzer-allocation-size}
+to disable it.
+
+This diagnostic warns for paths through the code in which a pointer to
+a buffer is assigned to point at a buffer with a size that is not a
+multiple of @code{sizeof (*pointer)}.
+
+See @url{https://cwe.mitre.org/data/definitions/131.html, CWE-131: Incorrect Calculation of Buffer Size}.
+
 @item -Wno-analyzer-double-fclose
 @opindex Wanalyzer-double-fclose
 @opindex Wno-analyzer-double-fclose
@@ -9815,6 +9839,56 @@ to disable it.
 This diagnostic warns for paths through the code in which a
 security-sensitive value is written to an output file
 (such as writing a password to a log file).
+
+@item -Wno-analyzer-fd-access-mode-mismatch
+@opindex Wanalyzer-fd-access-mode-mismatch
+@opindex Wno-analyzer-fd-access-mode-mismatch
+This warning requires @option{-fanalyzer}, which enables it; use
+@option{-Wno-analyzer-fd-access-mode-mismatch}
+to disable it.
+
+This diagnostic warns for paths through code in which a 
+@code{read} on a write-only file descriptor is attempted, or vice versa
+
+@item -Wno-analyzer-fd-double-close
+@opindex Wanalyzer-fd-double-close
+@opindex Wno-analyzer-fd-double-close
+This warning requires @option{-fanalyzer}, which enables it; use
+@option{-Wno-analyzer-fd-double-close}
+to disable it.
+
+This diagnostic warns for paths through code in which a 
+file descriptor can be closed more than once.
+
+@item -Wno-analyzer-fd-leak
+@opindex Wanalyzer-fd-leak
+@opindex Wno-analyzer-fd-leak
+This warning requires @option{-fanalyzer}, which enables it; use
+@option{-Wno-analyzer-fd-leak}
+to disable it.
+
+This diagnostic warns for paths through code in which an 
+open file descriptor is leaked.
+
+@item -Wno-analyzer-fd-use-after-close
+@opindex Wanalyzer-fd-use-after-close
+@opindex Wno-analyzer-fd-use-after-close
+This warning requires @option{-fanalyzer}, which enables it; use
+@option{-Wno-analyzer-fd-use-after-close}
+to disable it.
+
+This diagnostic warns for paths through code in which a 
+read or write is called on a closed file descriptor.
+
+@item -Wno-analyzer-fd-use-without-check
+@opindex Wanalyzer-fd-use-without-check
+@opindex Wno-analyzer-fd-use-without-check
+This warning requires @option{-fanalyzer}, which enables it; use
+@option{-Wno-analyzer-fd-use-without-check}
+to disable it.
+
+This diagnostic warns for paths through code in which a 
+file descriptor is used without being checked for validity.
 
 @item -Wno-analyzer-file-leak
 @opindex Wanalyzer-file-leak
@@ -10162,6 +10236,11 @@ following warnings from @option{-fanalyzer}:
 -Wanalyzer-double-fclose @gol
 -Wanalyzer-double-free @gol
 -Wanalyzer-exposure-through-output-file @gol
+-Wanalyzer-fd-access-mode-mismatch @gol
+-Wanalyzer-fd-double-close @gol
+-Wanalyzer-fd-leak @gol
+-Wanalyzer-fd-use-after-close @gol
+-Wanalyzer-fd-use-without-check @gol
 -Wanalyzer-file-leak @gol
 -Wanalyzer-free-of-non-heap @gol
 -Wanalyzer-malloc-leak @gol
@@ -24737,7 +24816,8 @@ Set the cost of branches to roughly @var{n} instructions.
 @itemx -mno-check-zero-divison
 @opindex -mcheck-zero-division
 Trap (do not trap) on integer division by zero.  The default is
-@option{-mcheck-zero-division}.
+@option{-mcheck-zero-division} for @option{-O0} or @option{-Og}, and
+@option{-mno-check-zero-division} for other optimization levels.
 
 @item -mcond-move-int
 @itemx -mno-cond-move-int

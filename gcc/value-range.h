@@ -73,12 +73,12 @@ class vrange
   template <typename T> friend bool is_a (vrange &);
   friend class Value_Range;
 public:
+  virtual void accept (const class vrange_visitor &v) const = 0;
   virtual void set (tree, tree, value_range_kind = VR_RANGE);
   virtual tree type () const;
   virtual bool supports_type_p (tree type) const;
   virtual void set_varying (tree type);
   virtual void set_undefined ();
-  virtual void dump (FILE * = stderr) const = 0;
   virtual bool union_ (const vrange &);
   virtual bool intersect (const vrange &);
   virtual bool singleton_p (tree *result = NULL) const;
@@ -95,9 +95,9 @@ public:
   vrange& operator= (const vrange &);
   bool operator== (const vrange &) const;
   bool operator!= (const vrange &r) const { return !(*this == r); }
+  void dump (FILE *) const;
 
   enum value_range_kind kind () const;		// DEPRECATED
-  void debug () const;
 
 protected:
   ENUM_BITFIELD(value_range_kind) m_kind : 8;
@@ -109,6 +109,7 @@ protected:
 class GTY((user)) irange : public vrange
 {
   friend class vrange_allocator;
+  friend class irange_storage_slot; // For legacy_mode_p checks.
 public:
   // In-place setters.
   virtual void set (tree, tree, value_range_kind = VR_RANGE) override;
@@ -147,7 +148,11 @@ public:
 
   // Misc methods.
   virtual bool fits_p (const vrange &r) const override;
-  virtual void dump (FILE * = stderr) const override;
+  virtual void accept (const vrange_visitor &v) const override;
+
+  // Nonzero masks.
+  wide_int get_nonzero_bits () const;
+  void set_nonzero_bits (const wide_int_ref &bits);
 
   // Deprecated legacy public methods.
   tree min () const;				// DEPRECATED
@@ -157,8 +162,6 @@ public:
   void normalize_symbolics ();			// DEPRECATED
   void normalize_addresses ();			// DEPRECATED
   bool may_contain_p (tree) const;		// DEPRECATED
-  void set (tree);				// DEPRECATED
-  bool equal_p (const irange &) const;		// DEPRECATED
   bool legacy_verbose_union_ (const class irange *);	// DEPRECATED
   bool legacy_verbose_intersect (const irange *);	// DEPRECATED
 
@@ -198,10 +201,14 @@ private:
 
   void irange_set_1bit_anti_range (tree, tree);
   bool varying_compatible_p () const;
+  void set_nonzero_bits (tree mask);
+  bool intersect_nonzero_bits (const irange &r);
+  bool union_nonzero_bits (const irange &r);
 
   bool intersect (const wide_int& lb, const wide_int& ub);
   unsigned char m_num_ranges;
   unsigned char m_max_ranges;
+  tree m_nonzero_mask;
   tree *m_base;
 };
 
@@ -242,7 +249,7 @@ class unsupported_range : public vrange
 {
 public:
   unsupported_range ();
-  virtual void dump (FILE *) const override;
+  virtual void accept (const vrange_visitor &v) const override;
 };
 
 // is_a<> and as_a<> implementation for vrange.
@@ -290,6 +297,13 @@ is_a <irange> (vrange &v)
   return v.m_discriminator == VR_IRANGE;
 }
 
+class vrange_visitor
+{
+public:
+  virtual void visit (const irange &) const { }
+  virtual void visit (const unsupported_range &) const { }
+};
+
 // This is a special int_range<1> with only one pair, plus
 // VR_ANTI_RANGE magic to describe slightly more than can be described
 // in one pair.  It is described in the code as a "legacy range" (as
@@ -321,7 +335,7 @@ public:
   bool operator!= (const Value_Range &r) const;
   operator vrange &();
   operator const vrange &() const;
-  void dump (FILE *out = stderr) const;
+  void dump (FILE *) const;
   static bool supports_type_p (tree type);
 
   // Convenience methods for vrange compatability.
@@ -340,6 +354,7 @@ public:
   bool zero_p () const { return m_vrange->zero_p (); }
   wide_int lower_bound () const; // For irange/prange compatability.
   wide_int upper_bound () const; // For irange/prange compatability.
+  void accept (const vrange_visitor &v) const { m_vrange->accept (v); }
 private:
   void init (tree type);
   unsupported_range m_unsupported;
@@ -547,7 +562,8 @@ irange::varying_compatible_p () const
   signop sign = TYPE_SIGN (t);
   if (INTEGRAL_TYPE_P (t))
     return (wi::to_wide (l) == wi::min_value (prec, sign)
-	    && wi::to_wide (u) == wi::max_value (prec, sign));
+	    && wi::to_wide (u) == wi::max_value (prec, sign)
+	    && !m_nonzero_mask);
   if (POINTER_TYPE_P (t))
     return (wi::to_wide (l) == 0
 	    && wi::to_wide (u) == wi::max_value (prec, sign));
@@ -610,6 +626,8 @@ gt_ggc_mx (irange *x)
       gt_ggc_mx (x->m_base[i * 2]);
       gt_ggc_mx (x->m_base[i * 2 + 1]);
     }
+  if (x->m_nonzero_mask)
+    gt_ggc_mx (x->m_nonzero_mask);
 }
 
 inline void
@@ -620,6 +638,8 @@ gt_pch_nx (irange *x)
       gt_pch_nx (x->m_base[i * 2]);
       gt_pch_nx (x->m_base[i * 2 + 1]);
     }
+  if (x->m_nonzero_mask)
+    gt_pch_nx (x->m_nonzero_mask);
 }
 
 inline void
@@ -630,6 +650,8 @@ gt_pch_nx (irange *x, gt_pointer_operator op, void *cookie)
       op (&x->m_base[i * 2], NULL, cookie);
       op (&x->m_base[i * 2 + 1], NULL, cookie);
     }
+  if (x->m_nonzero_mask)
+    op (&x->m_nonzero_mask, NULL, cookie);
 }
 
 template<unsigned N>
@@ -720,16 +742,11 @@ int_range<N>::operator= (const int_range &src)
 }
 
 inline void
-irange::set (tree val)
-{
-  set (val, val);
-}
-
-inline void
 irange::set_undefined ()
 {
   m_kind = VR_UNDEFINED;
   m_num_ranges = 0;
+  m_nonzero_mask = NULL;
 }
 
 inline void
@@ -737,6 +754,7 @@ irange::set_varying (tree type)
 {
   m_kind = VR_VARYING;
   m_num_ranges = 1;
+  m_nonzero_mask = NULL;
 
   if (INTEGRAL_TYPE_P (type))
     {
@@ -763,12 +781,6 @@ irange::set_varying (tree type)
     }
   else
     m_base[0] = m_base[1] = error_mark_node;
-}
-
-inline bool
-irange::operator== (const irange &r) const
-{
-  return equal_p (r);
 }
 
 // Return the lower bound of a sub-range.  PAIR is the sub-range in
@@ -846,7 +858,7 @@ irange::set_zero (tree type)
 {
   tree z = build_int_cst (type, 0);
   if (legacy_mode_p ())
-    set (z);
+    set (z, z);
   else
     irange_set (z, z);
 }
@@ -857,7 +869,7 @@ inline void
 irange::normalize_kind ()
 {
   if (m_num_ranges == 0)
-    m_kind = VR_UNDEFINED;
+    set_undefined ();
   else if (varying_compatible_p ())
     {
       if (m_kind == VR_RANGE)
@@ -894,115 +906,6 @@ vrp_val_min (const_tree type)
   if (POINTER_TYPE_P (type))
     return build_zero_cst (const_cast<tree> (type));
   return NULL_TREE;
-}
-
-// This is the range storage class.  It is used to allocate the
-// minimum amount of storage needed for a given range.  Storage is
-// automatically freed at destruction of the class.
-
-class vrange_allocator
-{
-public:
-  vrange_allocator () { }
-  virtual ~vrange_allocator () { }
-  // Allocate a range of TYPE.
-  vrange *alloc_vrange (tree type);
-  // Allocate a memory block of BYTES.
-  virtual void *alloc (unsigned bytes) = 0;
-  virtual void free (void *p) = 0;
-  // Return a clone of SRC.
-  template <typename T> T *clone (const T &src);
-private:
-  irange *alloc_irange (unsigned pairs);
-  void operator= (const vrange_allocator &) = delete;
-};
-
-class obstack_vrange_allocator : public vrange_allocator
-{
-public:
-  obstack_vrange_allocator ()
-  {
-    obstack_init (&m_obstack);
-  }
-  virtual ~obstack_vrange_allocator () final override
-  {
-    obstack_free (&m_obstack, NULL);
-  }
-  virtual void *alloc (unsigned bytes) final override
-  {
-    return obstack_alloc (&m_obstack, bytes);
-  }
-  virtual void free (void *) final override { }
-private:
-  obstack m_obstack;
-};
-
-class ggc_vrange_allocator : public vrange_allocator
-{
-public:
-  ggc_vrange_allocator () { }
-  virtual ~ggc_vrange_allocator () final override { }
-  virtual void *alloc (unsigned bytes) final override
-  {
-    return ggc_internal_alloc (bytes);
-  }
-  virtual void free (void *p) final override
-  {
-    return ggc_free (p);
-  }
-};
-
-// Return a new range to hold ranges of TYPE.  The newly allocated
-// range is initialized to VR_UNDEFINED.
-
-inline vrange *
-vrange_allocator::alloc_vrange (tree type)
-{
-  if (irange::supports_p (type))
-    return alloc_irange (2);
-
-  gcc_unreachable ();
-}
-
-// Return a new range with NUM_PAIRS.
-
-inline irange *
-vrange_allocator::alloc_irange (unsigned num_pairs)
-{
-  // Never allocate 0 pairs.
-  // Don't allocate 1 either, or we get legacy value_range's.
-  if (num_pairs < 2)
-    num_pairs = 2;
-
-  size_t nbytes = sizeof (tree) * 2 * num_pairs;
-
-  // Allocate the irange and required memory for the vector.
-  void *r = alloc (sizeof (irange));
-  tree *mem = static_cast <tree *> (alloc (nbytes));
-  return new (r) irange (mem, num_pairs);
-}
-
-// Return a clone of an irange.
-
-template <>
-inline irange *
-vrange_allocator::clone <irange> (const irange &src)
-{
-  irange *r = alloc_irange (src.num_pairs ());
-  *r = src;
-  return r;
-}
-
-// Return a clone of a vrange.
-
-template <>
-inline vrange *
-vrange_allocator::clone <vrange> (const vrange &src)
-{
-  if (is_a <irange> (src))
-    return clone <irange> (as_a <irange> (src));
-
-  gcc_unreachable ();
 }
 
 #endif // GCC_VALUE_RANGE_H

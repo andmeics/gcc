@@ -1,3 +1,524 @@
+2022-07-15  H.J. Lu  <hjl.tools@gmail.com>
+
+	PR target/85620
+	* gcc.target/i386/pr85620-2.c: Updated.
+	* gcc.target/i386/pr85620-5.c: New test.
+	* gcc.target/i386/pr85620-6.c: Likewise.
+	* gcc.target/i386/pr85620-7.c: Likewise.
+
+2022-07-15  Roger Sayle  <roger@nextmovesoftware.com>
+
+	PR target/106273
+	* gcc.target/i386/pr106273.c: New test case.
+
+2022-07-15  Steve Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/104313
+	* gfortran.dg/pr104313.f: New test.
+
+2022-07-15  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/104477
+	* g++.dg/ext/reference_constructs_from_temporary1.C: New test.
+	* g++.dg/ext/reference_converts_from_temporary1.C: New test.
+
+2022-07-15  David Malcolm  <dmalcolm@redhat.com>
+
+	PR analyzer/106284
+	* gcc.dg/analyzer/torture/taint-read-index-2.c: New test.
+
+2022-07-15  Roger Sayle  <roger@nextmovesoftware.com>
+
+	* gcc.dg/pr106278.c: New test case.
+
+2022-07-15  konglin1  <lingling.kong@intel.com>
+
+	PR target/106113
+	* gcc.target/i386/avx-vcomisd-pr106113-2.c: New test.
+	* gcc.target/i386/avx-vcomiss-pr106113-2.c: Ditto.
+	* gcc.target/i386/avx-vucomisd-pr106113-2.c: Ditto.
+	* gcc.target/i386/avx-vucomiss-pr106113-2.c: Ditto.
+	* gcc.target/i386/sse-comiss-pr106113-1.c: Ditto.
+	* gcc.target/i386/sse-comiss-pr106113-2.c: Ditto.
+	* gcc.target/i386/sse-ucomiss-pr106113-1.c: Ditto.
+	* gcc.target/i386/sse-ucomiss-pr106113-2.c: Ditto.
+	* gcc.target/i386/sse2-comisd-pr106113-1.c: Ditto.
+	* gcc.target/i386/sse2-comisd-pr106113-2.c: Ditto.
+	* gcc.target/i386/sse2-ucomisd-pr106113-1.c: Ditto.
+	* gcc.target/i386/sse2-ucomisd-pr106113-2.c: Ditto.
+
+2022-07-14  H.J. Lu  <hjl.tools@gmail.com>
+
+	PR tree-optimization/103798
+	* c-c++-common/pr103798-1.c: New test.
+	* c-c++-common/pr103798-2.c: Likewise.
+	* c-c++-common/pr103798-3.c: Likewise.
+	* c-c++-common/pr103798-4.c: Likewise.
+	* c-c++-common/pr103798-5.c: Likewise.
+	* c-c++-common/pr103798-6.c: Likewise.
+	* c-c++-common/pr103798-7.c: Likewise.
+	* c-c++-common/pr103798-8.c: Likewise.
+	* c-c++-common/pr103798-9.c: Likewise.
+	* c-c++-common/pr103798-10.c: Likewise.
+
+2022-07-14  Harald Anlauf  <anlauf@gmx.de>
+	    Steven G. Kargl  <kargl@gcc.gnu.org>
+
+	PR fortran/106209
+	* gfortran.dg/pr106209.f90: New test.
+
+2022-07-14  Eric Botcazou  <ebotcazou@adacore.com>
+
+	* gnat.dg/opt98.ads, gnat.dg/opt98.adb: New test.
+
+2022-07-14  Takayuki 'January June' Suwa  <jjsuwa_sys3175@yahoo.co.jp>
+
+	* gcc.target/xtensa/constsynth_double.c:
+	Modify in order to catch the issue.
+
+2022-07-13  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/105912
+	* g++.dg/cpp2a/consteval31.C: New test.
+
+2022-07-13  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/105842
+	* g++.dg/cpp2a/concepts-memtmpl6.C: New test.
+
+2022-07-13  Aldy Hernandez  <aldyh@redhat.com>
+
+	* g++.dg/ipa/pure-const-3.C: Adjust.
+	* gcc.dg/pr102983.c: Adjust.
+
+2022-07-13  Andrew Carlotti  <andrew.carlotti@arm.com>
+
+	* gcc.target/aarch64/advsimd-intrinsics/ignored_return_1.c: New test.
+
+2022-07-13  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/106249
+	* gcc.dg/pr106249.c: New testcase.
+
+2022-07-12  Harald Anlauf  <anlauf@gmx.de>
+
+	PR fortran/106049
+	* gfortran.dg/pack_simplify_1.f90: New test.
+
+2022-07-12  Richard Sandiford  <richard.sandiford@arm.com>
+
+	PR target/106253
+	* gcc.target/aarch64/vect_unary_1.c: Add tests for iroundf,
+	llround, iceilf, llceil, ifloorf, llfloor, irintf and llrint.
+	* gfortran.dg/vect/pr106253.f: New test.
+
+2022-07-12  Piotr Trojanek  <trojanek@adacore.com>
+
+	* gnat.dg/specs/discr5.ads: Expect new warnings.
+	* gnat.dg/specs/empty_variants.ads: Likewise.
+	* gnat.dg/specs/pack13.ads: Likewise.
+
+2022-07-12  Richard Sandiford  <richard.sandiford@arm.com>
+
+	* gcc.target/aarch64/vect_unary_1.c: New test.
+
+2022-07-12  Alexandre Oliva  <oliva@adacore.com>
+
+	* gcc.target/i386/cet-sjlj-6a.c: Cope with --enable-default-pie.
+	* gcc.target/i386/cet-sjlj-6b.c: Likewise.
+	* gcc.target/i386/fentryname3.c: Likewise.
+	* gcc.target/i386/mvc7.c: Likewise.
+	* gcc.target/i386/pr24414.c: Likewise.
+	* gcc.target/i386/pr93492-3.c: Likewise.
+	* gcc.target/i386/pr93492-5.c: Likewise.
+	* gcc.target/i386/pr98482-1.c: Likewise.
+
+2022-07-11  Roger Sayle  <roger@nextmovesoftware.com>
+
+	* gcc.target/i386/sse4_1-stv-2.c: New test case, pand.
+	* gcc.target/i386/sse4_1-stv-3.c: New test case, por.
+	* gcc.target/i386/sse4_1-stv-4.c: New test case, pxor.
+	* gcc.target/i386/sse4_1-stv-5.c: New test case, pandn.
+	* gcc.target/i386/sse4_1-stv-6.c: New test case, ptest.
+
+2022-07-11  Richard Sandiford  <richard.sandiford@arm.com>
+
+	PR tree-optimization/106250
+	* gcc.dg/vect/pr106250.c: New file.
+
+2022-07-11  Thomas Schwinge  <thomas@codesourcery.com>
+
+	* c-c++-common/gomp/pragma-3.c: Enhance '_Pragma' diagnostics
+	verification.
+	* c-c++-common/gomp/pragma-5.c: Likewise.
+
+2022-07-11  Richard Biener  <rguenthert@suse.de>
+
+	PR target/105459
+	* gcc.dg/lto/pr105459_0.c: New testcase.
+
+2022-07-10  Lewis Hyatt  <lhyatt@gmail.com>
+
+	PR preprocessor/97498
+	* c-c++-common/pr97498.c: New test.
+	* c-c++-common/gomp/pragma-3.c: Adapt for improved warning locations.
+	* c-c++-common/gomp/pragma-5.c: Likewise.
+	* gcc.dg/pragma-message.c: Likewise.
+
+2022-07-10  Dimitar Dimitrov  <dimitar@dinux.eu>
+
+	PR tree-optimization/106063
+	* gcc.dg/pr106063.c: Require effective target int128.
+
+2022-07-10  Xi Ruoyao  <xry111@xry111.site>
+
+	* gcc.target/loongarch/div-4.c: New test.
+
+2022-07-10  Xi Ruoyao  <xry111@xry111.site>
+
+	* gcc.target/loongarch/div-1.c: New test.
+	* gcc.target/loongarch/div-2.c: New test.
+	* gcc.target/loongarch/div-3.c: New test.
+
+2022-07-10  Xi Ruoyao  <xry111@xry111.site>
+
+	* gcc.target/loongarch/mulw_d_w.c: New test.
+	* gcc.c-torture/execute/mul-sext.c: New test.
+
+2022-07-09  Vit Kabele  <vit.kabele@sysgo.com>
+
+	* c-c++-common/Wpadded.c: New test.
+
+2022-07-09  Sam Feifer  <sfeifer@redhat.com>
+
+	PR tree-optimization/98304
+	* gcc.c-torture/execute/pr98304-2.c: New test.
+	* gcc.dg/pr98304-1.c: New test.
+
+2022-07-09  Andrew Pinski  <apinski@marvell.com>
+
+	PR tree-optimization/106087
+	* gcc.c-torture/compile/inline-asm-1.c: New test.
+
+2022-07-08  Martin Jambor  <mjambor@suse.cz>
+
+	PR testsuite/106216
+	* gcc.dg/tree-ssa/alias-access-path-13.c (union foo): Replace a long
+	int field with a struct that is larger than an int also on 32bit
+	platforms.
+
+2022-07-08  Lewis Hyatt  <lhyatt@gmail.com>
+
+	PR preprocessor/91733
+	* c-c++-common/pr91733.c: New test.
+
+2022-07-08  Martin Liska  <mliska@suse.cz>
+
+	PR sanitizer/106132
+	* c-c++-common/hwasan/arguments-3.c: Cover new ICE.
+
+2022-07-08  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/106226
+	* gfortran.dg/pr106226.f: New testcase.
+
+2022-07-08  Tamar Christina  <tamar.christina@arm.com>
+
+	PR tree-optimization/106063
+	* gcc.dg/pr106063.c: New test.
+
+2022-07-08  Tamar Christina  <tamar.christina@arm.com>
+
+	* g++.target/aarch64/complex-init.C: New test.
+
+2022-07-08  Haochen Jiang  <haochen.jiang@intel.com>
+
+	PR target/106180
+	* g++.target/i386/pr106180-1.C: New test.
+
+2022-07-08  Lulu Cheng  <chenglulu@loongson.cn>
+
+	* gcc.target/loongarch/prolog-opt.c: New test.
+
+2022-07-07  Patrick Palka  <ppalka@redhat.com>
+
+	PR c++/105956
+	* g++.dg/cpp0x/variadic183.C: New test.
+
+2022-07-07  David Malcolm  <dmalcolm@redhat.com>
+
+	PR analyzer/106225
+	* gcc.dg/analyzer/taint-divisor-1.c: Add test coverage for various
+	correct and incorrect checks against zero.
+
+2022-07-07  Jason Merrill  <jason@redhat.com>
+
+	PR c++/87729
+	* g++.dg/warn/Woverloaded-virt3.C: New test.
+
+2022-07-07  Richard Biener  <rguenther@suse.de>
+
+	PR target/106219
+	* g++.dg/pr106219.C: New testcase.
+
+2022-07-07  Jonathan Wakely  <jwakely@redhat.com>
+
+	* gcc.target/powerpc/ppc-fortran/pr80108-1.f90: Change
+	-mfloat128-type to -mfloat128.
+
+2022-07-06  Lewis Hyatt  <lhyatt@gmail.com>
+
+	PR preprocessor/53920
+	PR c++/53431
+	* c-c++-common/pragma-diag-11.c: New test.
+	* c-c++-common/pragma-diag-12.c: New test.
+	* c-c++-common/pragma-diag-13.c: New test.
+
+2022-07-06  Immad Mir  <mirimmad@outlook.com>
+
+	* gcc.dg/analyzer/fd-4.c: Add a new testcase to demonstrate
+	passsing of a closed file descriptor to a function that does
+	not emit any warning.
+
+2022-07-06  Immad Mir  <mirimmad@outlook.com>
+
+	* gcc.dg/analyzer/fd-4.c (test_3): change the message note to conform to the
+	changes in analyzer/sm-fd.cc
+	(test_4): Likewise.
+
+2022-07-06  David Malcolm  <dmalcolm@redhat.com>
+
+	PR analyzer/106204
+	* gcc.dg/analyzer/torture/uninit-pr106204.c: New test.
+	* gcc.dg/analyzer/uninit-pr106204.c: New test.
+
+2022-07-06  Jason Merrill  <jason@redhat.com>
+
+	PR c++/106179
+	PR c++/106024
+	* g++.dg/template/operator16.C: New test.
+
+2022-07-05  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/105626
+	* g++.dg/warn/Wformat-char8_t-1.C: New test.
+
+2022-07-05  Roger Sayle  <roger@nextmovesoftware.com>
+
+	* gcc.target/i386/testnot-3.c: New test case.
+
+2022-07-05  Roger Sayle  <roger@nextmovesoftware.com>
+	    Hongtao Liu  <hongtao.liu@intel.com>
+
+	* gcc.target/i386/ssse3-palignr-2.c: New test case.
+
+2022-07-05  Roger Sayle  <roger@nextmovesoftware.com>
+	    Uroš Bizjak  <ubizjak@gmail.com>
+
+	PR rtl-optimization/96692
+	* gcc.target/i386/bmi-andn-4.c: New test case.
+
+2022-07-05  Nathan Sidwell  <nathan@acm.org>
+
+	* g++.dg/modules/loc-prune-1.C: Adjust.
+	* g++.dg/modules/loc-prune-4.C: New.
+	* g++.dg/modules/pr98718_a.C: Adjust.
+	* g++.dg/modules/pr98718_b.C: Adjust.
+	* g++.dg/modules/pr99072.H: Adjust.
+
+2022-07-05  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/106198
+	* gcc.dg/pr106198.c: New testcase.
+
+2022-07-05  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/106196
+	* gcc.dg/torture/pr106196.c: New testcase.
+
+2022-07-05  Alexandre Oliva  <oliva@adacore.com>
+
+	* lib/target-supports.exp (check_effective_target_two_plus_gigs):
+	Fix array element type.  Reported by Hans-Peter Nilsson.
+
+2022-07-05  Piotr Trojanek  <trojanek@adacore.com>
+
+	* gnat.dg/renaming1.adb: Update WITH clause.
+	* gnat.dg/renaming1.ads: Likewise.
+	* gnat.dg/warn29.adb: Likewise.
+
+2022-07-05  Richard Sandiford  <richard.sandiford@arm.com>
+
+	* gcc.dg/vect/vect-reduc-dot-9.c: Reduce target requirements
+	from i8mm to dotprod.
+	* gcc.dg/vect/vect-reduc-dot-10.c: Likewise.
+	* gcc.dg/vect/vect-reduc-dot-11.c: Likewise.
+	* gcc.dg/vect/vect-reduc-dot-12.c: Likewise.
+	* gcc.dg/vect/vect-reduc-dot-13.c: Likewise.
+	* gcc.dg/vect/vect-reduc-dot-14.c: Likewise.
+	* gcc.dg/vect/vect-reduc-dot-15.c: Likewise.
+	* gcc.dg/vect/vect-reduc-dot-16.c: Likewise.
+	* gcc.dg/vect/vect-reduc-dot-17.c: Likewise.
+	* gcc.dg/vect/vect-reduc-dot-18.c: Likewise.
+	* gcc.dg/vect/vect-reduc-dot-19.c: Likewise.
+	* gcc.dg/vect/vect-reduc-dot-20.c: Likewise.
+	* gcc.dg/vect/vect-reduc-dot-21.c: Likewise.
+	* gcc.dg/vect/vect-reduc-dot-22.c: Likewise.
+
+2022-07-05  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/106182
+	* gcc.dg/torture/pr106182.c: New testcase.
+
+2022-07-05  Hans-Peter Nilsson  <hp@axis.com>
+
+	* gcc.dg/analyzer/allocation-size-1.c,
+	gcc.dg/analyzer/allocation-size-2.c,
+	gcc.dg/analyzer/allocation-size-3.c,
+	gcc.dg/analyzer/allocation-size-4.c,
+	gcc.dg/analyzer/allocation-size-5.c: Handle int32_t being "long int".
+
+2022-07-04  Tobias Burnus  <tobias@codesourcery.com>
+	    Jakub Jelinek  <jakub@redhat.com>
+
+	* c-c++-common/gomp/linear-4.c: New test.
+	* gfortran.dg/gomp/linear-2.f90: New test.
+	* gfortran.dg/gomp/linear-3.f90: New test.
+	* gfortran.dg/gomp/linear-4.f90: New test.
+	* gfortran.dg/gomp/linear-5.f90: New test.
+	* gfortran.dg/gomp/linear-6.f90: New test.
+	* gfortran.dg/gomp/linear-7.f90: New test.
+	* gfortran.dg/gomp/linear-8.f90: New test.
+
+2022-07-04  Martin Jambor  <mjambor@suse.cz>
+
+	PR tree-optimization/105860
+	* gcc.dg/tree-ssa/alias-access-path-13.c: New test.
+	* gcc.dg/tree-ssa/pr105860.c: Likewise.
+
+2022-07-04  Tobias Burnus  <tobias@codesourcery.com>
+	    Chung-Lin Tang  <cltang@codesourcery.com>
+	    Thomas Schwinge  <thomas@codesourcery.com>
+
+	* c-c++-common/gomp/requires-4.c: Update dg-*.
+	* c-c++-common/gomp/reverse-offload-1.c: Likewise.
+	* c-c++-common/gomp/target-device-ancestor-2.c: Likewise.
+	* c-c++-common/gomp/target-device-ancestor-3.c: Likewise.
+	* c-c++-common/gomp/target-device-ancestor-4.c: Likewise.
+	* c-c++-common/gomp/target-device-ancestor-5.c: Likewise.
+	* gfortran.dg/gomp/target-device-ancestor-3.f90: Likewise.
+	* gfortran.dg/gomp/target-device-ancestor-4.f90: Likewise.
+	* gfortran.dg/gomp/target-device-ancestor-5.f90: Likewise.
+	* gfortran.dg/gomp/target-device-ancestor-2.f90: Likewise. Move
+	post-FE checks to ...
+	* gfortran.dg/gomp/target-device-ancestor-2a.f90: ... this new file.
+	* gfortran.dg/gomp/requires-8.f90: Update as we don't regard
+	'declare target' for the 'requires' usage requirement.
+
+2022-07-04  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/106055
+	* gcc.dg/graphite/pr106055.c: New testcase.
+
+2022-07-04  Haochen Jiang  <haochen.jiang@intel.com>
+
+	PR target/43618
+	* gcc.target/i386/pr43618-1.c: New test.
+
+2022-07-03  H.J. Lu  <hjl.tools@gmail.com>
+
+	PR target/106022
+	* gcc.target/i386/pr106022-1.c: New test.
+	* gcc.target/i386/pr106022-2.c: Likewise.
+	* gcc.target/i386/pr106022-3.c: Likewise.
+	* gcc.target/i386/pr106022-4.c: Likewise.
+
+2022-07-03  Xi Ruoyao  <xry111@xry111.site>
+	    Lulu Cheng  <chenglulu@loongson.cn>
+
+	* gcc.c-torture/execute/20101011-1.c (dg-additional-options):
+	add -mcheck-zero-division for LoongArch targets.
+
+2022-07-03  Tim Lange  <mail@tim-lange.me>
+
+	* gcc.dg/analyzer/allocation-size-1.c: Use fixed-length types.
+	* gcc.dg/analyzer/allocation-size-2.c: Likewise.
+	* gcc.dg/analyzer/allocation-size-3.c: Likewise.
+	* gcc.dg/analyzer/allocation-size-4.c: Likewise.
+	* gcc.dg/analyzer/allocation-size-5.c: Likewise.
+
+2022-07-03  Ian Lance Taylor  <iant@golang.org>
+
+	* g++.dg/torture/except-1.C: New test.
+
+2022-07-02  Tim Lange  <mail@tim-lange.me>
+
+	PR analyzer/105900
+	* gcc.dg/analyzer/pr96639.c: Changed buffer size to omit warning.
+	* gcc.dg/analyzer/allocation-size-1.c: New test.
+	* gcc.dg/analyzer/allocation-size-2.c: New test.
+	* gcc.dg/analyzer/allocation-size-3.c: New test.
+	* gcc.dg/analyzer/allocation-size-4.c: New test.
+	* gcc.dg/analyzer/allocation-size-5.c: New test.
+
+2022-07-02  Immad Mir  <mirimmad17@gmail.com>
+
+	PR analyzer/106003
+	* gcc.dg/analyzer/fd-1.c: New test.
+	* gcc.dg/analyzer/fd-2.c: New test.
+	* gcc.dg/analyzer/fd-3.c: New test.
+	* gcc.dg/analyzer/fd-4.c: New test.
+
+2022-07-01  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/105550
+	* g++.dg/cpp1y/nsdmi-aggr16.C: Remove FIXME.
+	* g++.dg/cpp1y/nsdmi-aggr17.C: Remove FIXME.
+	* g++.dg/cpp0x/constexpr-elision1.C: New test.
+	* g++.dg/cpp1y/constexpr-elision1.C: New test.
+
+2022-07-01  Tobias Burnus  <tobias@codesourcery.com>
+
+	* c-c++-common/gomp/target-data-2.c: New test.
+	* c-c++-common/gomp/target-data-3.c: New test.
+	* gfortran.dg/gomp/target-data-1.f90: New test.
+	* gfortran.dg/gomp/target-data-2.f90: New test.
+
+2022-07-01  Marek Polacek  <polacek@redhat.com>
+
+	PR c++/106111
+	* g++.dg/cpp0x/keywords1.C: New test.
+	* g++.dg/cpp2a/keywords1.C: New test.
+
+2022-07-01  Jason Merrill  <jason@redhat.com>
+
+	PR c++/106024
+	* g++.dg/cpp2a/lambda-generic10.C: New test.
+
+2022-07-01  Kito Cheng  <kito.cheng@sifive.com>
+
+	Revert:
+	2022-06-30  Kito Cheng  <kito.cheng@sifive.com>
+
+	PR testsuite/102690
+	* g++.dg/warn/Warray-bounds-16.C: XFAIL only on lp64 for the
+	warning.
+
+2022-07-01  Roger Sayle  <roger@nextmovesoftware.com>
+
+	PR target/106122
+	* gcc.target/i386/pr106122.c: New test case.
+
+2022-07-01  Richard Biener  <rguenther@suse.de>
+
+	PR tree-optimization/106131
+	* g++.dg/torture/pr106131.C: New testcase.
+
+2022-07-01  Martin Liska  <mliska@suse.cz>
+
+	PR tree-optimization/106126
+	* gcc.dg/tree-ssa/pr106126.c: New test.
+
 2022-06-30  Harald Anlauf  <anlauf@gmx.de>
 	    Steven G. Kargl  <kargl@gcc.gnu.org>
 

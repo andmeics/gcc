@@ -1024,7 +1024,8 @@ range_fold_unary_symbolics_p (value_range *vr,
 	{
 	  /* ~X is simply -1 - X.  */
 	  value_range minusone;
-	  minusone.set (build_int_cst (vr0->type (), -1));
+	  tree t = build_int_cst (vr0->type (), -1);
+	  minusone.set (t, t);
 	  range_fold_binary_expr (vr, MINUS_EXPR, expr_type, &minusone, vr0);
 	  return true;
 	}
@@ -3738,16 +3739,18 @@ vrp_asserts::remove_range_assertions ()
 		    && all_imm_uses_in_stmt_or_feed_cond (var, stmt,
 							  single_pred (bb)))
 		  {
-		    /* We could use duplicate_ssa_name_range_info here
-		       instead of peeking inside SSA_NAME_RANGE_INFO,
-		       but the aforementioned asserts that the
-		       destination has no global range.  This is
-		       slated for removal anyhow.  */
-		    value_range r (TREE_TYPE (lhs),
-				   SSA_NAME_RANGE_INFO (lhs)->get_min (),
-				   SSA_NAME_RANGE_INFO (lhs)->get_max (),
-				   SSA_NAME_RANGE_TYPE (lhs));
-		    set_range_info (var, r);
+		    if (SSA_NAME_RANGE_INFO (var))
+		      {
+			/* ?? This is a minor wart exposing the
+			   internals of SSA_NAME_RANGE_INFO in order
+			   to maintain existing behavior.  This is
+			   because duplicate_ssa_name_range_info below
+			   needs a NULL destination range.  This is
+			   all slated for removal...  */
+			ggc_free (SSA_NAME_RANGE_INFO (var));
+			SSA_NAME_RANGE_INFO (var) = NULL;
+		      }
+		    duplicate_ssa_name_range_info (var, lhs);
 		    maybe_set_nonzero_bits (single_pred_edge (bb), var);
 		  }
 	      }
