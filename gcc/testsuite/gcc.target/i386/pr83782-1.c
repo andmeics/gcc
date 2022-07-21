@@ -20,7 +20,7 @@ bar(void)
   return foo;
 }
 
-/* { dg-final { scan-assembler {leal[ \t]foo@GOTOFF\(%[^,]*\),[ \t]%eax} { target ia32 } } } */
+/* { dg-final { scan-assembler-not {leal[ \t]foo@GOTOFF\(%[^,]*\),[ \t]%eax} { target ia32 } } } */
 /* { dg-final { scan-assembler {lea(?:l|q)[ \t]foo\(%rip\),[ \t]%(?:e|r)ax} { target { ! ia32 } } } } */
-/* { dg-final { scan-assembler-not "foo@GOT\\\(" { target ia32 } } } */
+/* { dg-final { scan-assembler "foo@GOT\\\(" { target ia32 } } } */
 /* { dg-final { scan-assembler-not "foo@GOTPCREL\\\(" { target { ! ia32 } } } } */

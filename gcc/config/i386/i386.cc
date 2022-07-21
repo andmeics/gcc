@@ -16058,13 +16058,17 @@ ix86_call_use_plt_p (rtx call_op)
     {
       if (SYMBOL_REF_DECL (call_op)
 	  && TREE_CODE (SYMBOL_REF_DECL (call_op)) == FUNCTION_DECL)
-	{
-	  /* NB: All ifunc functions must be called via PLT.  */
-	  cgraph_node *node
-	    = cgraph_node::get (SYMBOL_REF_DECL (call_op));
-	  if (node && node->ifunc_resolver)
+	/* NB: All ifunc functions must be called via PLT, and we have
+	   to explicitly iterate over an alias chain looking for a
+	   node marked as an ifunc(_resolver) to tell.  That node is
+	   itself aliased to the actual resolver function, so
+	   ultimate_alias_target would skip the marker, and the call
+	   may be to another declaration aliased to the ifunc.  */
+	for (cgraph_node *node
+	       = cgraph_node::get (SYMBOL_REF_DECL (call_op));
+	     node && node->alias; node = node->get_alias_target ())
+	  if (node->ifunc_resolver)
 	    return true;
-	}
       return false;
     }
   return true;
@@ -23910,6 +23914,20 @@ ix86_reloc_rw_mask (void)
 }
 #endif
 
+/* Return true iff ADDR can be used as a base address.  */
+
+static bool
+base_address_p (rtx addr)
+{
+  if (REG_P (addr) || GET_CODE (addr) == SYMBOL_REF)
+    return true;
+
+  if (GET_CODE (addr) == UNSPEC && XINT (addr, 1) == UNSPEC_GOTOFF)
+    return true;
+
+  return false;
+}
+
 /* If MEM is in the form of [base+offset], extract the two parts
    of address and set to BASE and OFFSET, otherwise return false.  */
 
@@ -23925,7 +23943,7 @@ extract_base_offset_in_addr (rtx mem, rtx *base, rtx *offset)
   if (GET_CODE (addr) == CONST)
     addr = XEXP (addr, 0);
 
-  if (REG_P (addr) || GET_CODE (addr) == SYMBOL_REF)
+  if (base_address_p (addr))
     {
       *base = addr;
       *offset = const0_rtx;
@@ -23933,8 +23951,7 @@ extract_base_offset_in_addr (rtx mem, rtx *base, rtx *offset)
     }
 
   if (GET_CODE (addr) == PLUS
-      && (REG_P (XEXP (addr, 0))
-	  || GET_CODE (XEXP (addr, 0)) == SYMBOL_REF)
+      && base_address_p (XEXP (addr, 0))
       && CONST_INT_P (XEXP (addr, 1)))
     {
       *base = XEXP (addr, 0);

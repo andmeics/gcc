@@ -596,7 +596,9 @@
   if (TARGET_DLLIMPORT_DECL_ATTRIBUTES && SYMBOL_REF_DLLIMPORT_P (op))
     return false;
   if (SYMBOL_REF_LOCAL_P (op))
-    return true;
+    /* ifuncname@GOTOFF was rejected by the x86 linker before May
+       2018, and silently generated wrong code for PIE afterwards.  */
+    return !ix86_call_use_plt_p (op);
 
   /* There is, however, a not insubstantial body of code in the rest of
      the compiler that assumes it can just stick the results of
